@@ -1,0 +1,13 @@
+{
+  "dest_ip": "192.168.10.1",
+  "dest_port": 5005,
+  "camera": {
+    "device": "picamera2",
+    "width": 640,
+    "height": 480,
+    "fps": 30
+  },
+  "model_path": "./hand_landmarker.task",
+  "max_hands": 1,
+  "alpha": 0.75
+}

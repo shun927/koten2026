@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .DS_Store
 
+# Local runtime config / large assets
+hand_landmarker.task
+pi_project/config/endpoint.json

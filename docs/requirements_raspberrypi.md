@@ -156,7 +156,10 @@ uv pip install opencv-python
 ```
 
 ## 11. モデルファイル配置
-このリポジトリには `hand_landmarker.task` が **リポジトリ直下** にあります（Windows側：`hand_landmarker.task`）。
+`hand_landmarker.task`（MediaPipe TasksのHand Landmarkerモデル）を用意して、Piのプロジェクト直下に配置します。
+
+注意：
+- このリポジトリにモデルファイルが入っていない場合があります（サイズ/配布都合）。その場合は別途入手して配置します。
 
 ### 11.1 どこに置けばいい？
 Pi上のプロジェクトディレクトリ直下に置くのが分かりやすいです。
@@ -179,6 +182,22 @@ scp hand_landmarker.task pi@<PI_IP>:/home/pi/koten2026/
 ```bash
 ls -lh /home/pi/koten2026/hand_landmarker.task
 ```
+
+### 11.4 Pi Camera Module V2（Picamera2）について
+Camera Module V2は `libcamera` 系で扱うのが基本です。
+
+要件：
+- Pi側で `libcamera-hello` が動くこと
+- Pythonからは `picamera2` を使うのが安定（OpenCVの `VideoCapture(0)` だけで読めない環境がある）
+
+インストール（Pi上）：
+```bash
+sudo apt -y install libcamera-apps python3-picamera2
+libcamera-hello
+```
+
+実装側の想定：
+- `pi_project/app/pi_hand_sender.py` は `camera.device` に `picamera2` を指定できる
 
 ## 12. ネットワーク設定（UDP）
 - 送信先（PC）のIPアドレスと受信ポートを決める
