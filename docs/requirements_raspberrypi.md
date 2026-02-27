@@ -129,18 +129,21 @@ uv --version
 プロジェクトディレクトリ（例：`/home/pi/koten2026`）で実行：
 ```bash
 cd /home/pi/koten2026
-uv venv
+uv python install 3.11
+uv venv --python 3.11
 ```
 
 ### 10.3 MediaPipeの導入（第一候補）
 要件：
-- PiのOS/アーキテクチャによって `mediapipe` が `uv pip`/`pip` で入らない場合があります。
+- Piの環境では `mediapipe` のwheel都合で **Python 3.13 だと入りません**（`cp313` が無い）。
+- そのため、まず `uv python install 3.11` などで **Python 3.11/3.12** を使う前提にします。
+- さらに、aarch64（Pi）向けwheelがあるバージョンに合わせる必要があるため、`mediapipe==0.10.21` を第一候補にします。
 - 入らない場合は、要件として「OS/Pythonバージョンを合わせる」か「代替実装（TFLite直叩き等）」を検討します。
 
 導入（通ればOK）：
 ```bash
 cd /home/pi/koten2026
-uv pip install mediapipe
+uv pip install mediapipe==0.10.21
 ```
 
 ### 10.4 OpenCVの導入

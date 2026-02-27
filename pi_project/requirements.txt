@@ -1,2 +1,2 @@
 opencv-python-headless
-mediapipe
+mediapipe==0.10.21
