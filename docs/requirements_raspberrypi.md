@@ -20,7 +20,7 @@
 - ネットワーク：有線LAN推奨（Wi‑Fiは混雑で遅延/ドロップ増の可能性）
 
 ### 3.1 採用予定ハード
-- Raspberry Pi 4 Model B 8GB
+- Raspberry Pi 4 Model B 4GB
 - Raspberry Pi カメラモジュール V2
 
 ## 4. ソフト要件
@@ -161,17 +161,11 @@ uv pip install opencv-python
 ## 11. モデルファイル配置
 `hand_landmarker.task`（MediaPipe TasksのHand Landmarkerモデル）を用意して、Piのプロジェクト直下に配置します。
 
-注意：
-- このリポジトリにモデルファイルが入っていない場合があります（サイズ/配布都合）。その場合は別途入手して配置します。
-
-### 11.1 どこに置けばいい？
-Pi上のプロジェクトディレクトリ直下に置くのが分かりやすいです。
-
 例：
 - Pi側プロジェクト：`/home/pi/koten2026`
 - モデル配置先：`/home/pi/koten2026/hand_landmarker.task`
 
-### 11.2 どうやってPiに持っていく？
+### 11.1 どうやってPiに持っていく？
 PCからPiにコピーします（PCで実行）。
 
 例（PC→Piにコピー）：
@@ -179,14 +173,14 @@ PCからPiにコピーします（PCで実行）。
 scp hand_landmarker.task pi@<PI_IP>:/home/pi/koten2026/
 ```
 
-### 11.3 参照のしかた（実装時の要件）
+### 11.2 参照のしかた（実装時の要件）
 - 実装では「相対パス `./hand_landmarker.task`」または「絶対パス `/home/pi/koten2026/hand_landmarker.task`」で参照する
 - ファイルが存在することをPi側で確認：
 ```bash
 ls -lh /home/pi/koten2026/hand_landmarker.task
 ```
 
-### 11.4 Pi Camera Module V2（Picamera2）について
+### 11.3 Pi Camera Module V2（Picamera2）について
 Camera Module V2は `libcamera` 系で扱うのが基本です。
 
 要件：
@@ -211,7 +205,7 @@ hostname -I
 ```
 
 ### 12.1 送信先のデフォルト（記録）
-- 送信先PC IP：`192.168.1.100`（例）
+- 送信先PC IP：`192.168.10.1`（直結構成の例）
 - 送信先PC UDPポート：`5005`（例）
 
 ### 12.2 会場向け：PC↔Pi を有線で直結する構成（推奨）
@@ -244,3 +238,83 @@ IPを固定にする（例：`192.168.10.2/24`）。
 - 標準出力/エラーをログとして残す
 
 （具体的なunitファイルは、実装スクリプト名とパスが確定した段階で作成する）
+
+## 14. SSH接続の実運用メモ
+### 14.1 初回セットアップ（Imager）
+- Raspberry Pi ImagerでRaspberry Pi OS 64-bitを書き込み
+- 詳細設定（歯車）で以下を設定：
+  - ホスト名（例：`pi4-01`）
+  - ユーザー名/パスワード（例：`sk`）
+  - `SSH` 有効化
+
+### 14.2 接続例
+- 直結固定IP後：`ssh <USER>@192.168.10.2`
+- 同一LANで名前解決できる場合：`ssh <USER>@pi4-01`
+
+### 14.3 よくある失敗
+- `Could not resolve hostname`：ホスト名解決できていない。IP直指定で接続する
+- `Permission denied`：ユーザー名が違う可能性が高い（Imager設定のユーザー名を使う）
+
+## 15. Piへのプロジェクト配置（PCで実行）
+PowerShell例（`<USER>` はPiのユーザー名）：
+```powershell
+ssh <USER>@192.168.10.2 "mkdir -p /home/<USER>/koten2026"
+scp -r .\pi_project\* <USER>@192.168.10.2:/home/<USER>/koten2026/
+```
+
+## 16. 依存インストール手順（Piで実行）
+### 16.1 OS更新
+```bash
+sudo apt update
+sudo apt -y upgrade
+```
+
+### 16.2 カメラ関連
+```bash
+sudo apt -y install libcamera-apps python3-picamera2
+libcamera-hello
+```
+
+### 16.3 `uv` 導入
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+uv --version
+```
+
+### 16.4 Python依存
+```bash
+cd /home/<USER>/koten2026
+uv python install 3.11
+uv venv --python 3.11
+uv pip install -r requirements.txt
+```
+
+## 17. モデル配置と起動確認
+### 17.1 モデル配置（PCで実行）
+```powershell
+scp .\hand_landmarker.task <USER>@192.168.10.2:/home/<USER>/koten2026/
+```
+
+### 17.2 モデル存在確認（Piで実行）
+```bash
+ls -lh /home/<USER>/koten2026/hand_landmarker.task
+```
+
+### 17.3 実行（PC受信 + Pi送信）
+PC：
+```powershell
+python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005
+```
+
+Pi：
+```bash
+cd /home/<USER>/koten2026
+cp config/endpoint.example.json config/endpoint.json
+.venv/bin/python app/pi_hand_sender.py --config config/endpoint.json --model ./hand_landmarker.task --print-fps
+```
+
+## 18. トラブルシュート
+- 受信できない：WindowsファイアウォールでUDP `5005` を許可
+- カメラが映らない：`libcamera-hello` が動くか確認
+- `mediapipe` が入らない：Python 3.11/3.12のvenvで再実行

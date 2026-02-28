@@ -8,6 +8,6 @@
     "fps": 30
   },
   "model_path": "./hand_landmarker.task",
-  "max_hands": 1,
+  "max_hands": 2,
   "alpha": 0.75
 }

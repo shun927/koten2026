@@ -153,7 +153,7 @@ def main() -> int:
     )
 
     seq = 0
-    ema: Vec3 | None = None
+    ema_by_hand_index: dict[int, Vec3] = {}
     frames = 0
     last_fps_print = time.time()
 
@@ -179,25 +179,30 @@ def main() -> int:
 
             result = landmarker.detect_for_video(mp_image, t_mp_ms)
 
-            msg = {
-                "v": 1,
-                "t_ms": t_ms,
-                "seq": seq,
-                "src": "pi",
-                "hand": "Unknown",
-                "conf": 0.0,
-                "tip_rel": [0.0, 0.0, 0.0],
-                "tip_norm": [0.0, 0.0, 0.0],
-                "scale": 0.0,
-                "valid": False,
-            }
-            seq += 1
+            world = getattr(result, "hand_world_landmarks", None) or []
+            image_landmarks = getattr(result, "hand_landmarks", None) or []
+            handedness = getattr(result, "handedness", None) or []
 
-            world = getattr(result, "hand_world_landmarks", None)
-            handedness = getattr(result, "handedness", None)
+            # Send one message per detected hand (up to max_hands).
+            send_count = min(len(world), max_hands)
+            for hand_index in range(send_count):
+                msg = {
+                    "v": 1,
+                    "t_ms": t_ms,
+                    "seq": seq,
+                    "src": "pi",
+                    "hand_index": hand_index,
+                    "hand": "Unknown",
+                    "conf": 0.0,
+                    "tip_img": [0.0, 0.0],
+                    "tip_rel": [0.0, 0.0, 0.0],
+                    "tip_norm": [0.0, 0.0, 0.0],
+                    "scale": 0.0,
+                    "valid": False,
+                }
+                seq += 1
 
-            if world and len(world) > 0:
-                hw = world[0]
+                hw = world[hand_index]
                 wrist = Vec3(hw[0].x, hw[0].y, hw[0].z)
                 tip = Vec3(hw[8].x, hw[8].y, hw[8].z)
                 mcp5 = Vec3(hw[5].x, hw[5].y, hw[5].z)
@@ -208,16 +213,17 @@ def main() -> int:
                 if scale > 1e-6:
                     tip_norm = tip_rel / scale
                     if alpha and 0.0 < alpha < 1.0:
-                        if ema is None:
-                            ema = tip_norm
+                        prev = ema_by_hand_index.get(hand_index)
+                        if prev is None:
+                            ema_by_hand_index[hand_index] = tip_norm
                         else:
                             a = alpha
-                            ema = Vec3(
-                                a * ema.x + (1.0 - a) * tip_norm.x,
-                                a * ema.y + (1.0 - a) * tip_norm.y,
-                                a * ema.z + (1.0 - a) * tip_norm.z,
+                            ema_by_hand_index[hand_index] = Vec3(
+                                a * prev.x + (1.0 - a) * tip_norm.x,
+                                a * prev.y + (1.0 - a) * tip_norm.y,
+                                a * prev.z + (1.0 - a) * tip_norm.z,
                             )
-                        tip_norm_out = ema
+                        tip_norm_out = ema_by_hand_index[hand_index]
                     else:
                         tip_norm_out = tip_norm
 
@@ -226,15 +232,39 @@ def main() -> int:
                     msg["scale"] = float(scale)
                     msg["valid"] = True
 
-                if handedness and len(handedness) > 0 and len(handedness[0]) > 0:
-                    label = getattr(handedness[0][0], "category_name", None)
+                # Normalized image-space tip position (0..1). Useful for left/right assignment in TouchDesigner.
+                if hand_index < len(image_landmarks):
+                    hl = image_landmarks[hand_index]
+                    msg["tip_img"] = [float(hl[8].x), float(hl[8].y)]
+
+                if hand_index < len(handedness) and len(handedness[hand_index]) > 0:
+                    label = getattr(handedness[hand_index][0], "category_name", None)
                     if isinstance(label, str) and label:
                         msg["hand"] = label
-                    score = getattr(handedness[0][0], "score", None)
+                    score = getattr(handedness[hand_index][0], "score", None)
                     if isinstance(score, (int, float)):
                         msg["conf"] = float(score)
 
-            sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
+                sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
+
+            # If no hands detected, still send a heartbeat message so the receiver can time out cleanly.
+            if send_count == 0:
+                msg = {
+                    "v": 1,
+                    "t_ms": t_ms,
+                    "seq": seq,
+                    "src": "pi",
+                    "hand_index": -1,
+                    "hand": "Unknown",
+                    "conf": 0.0,
+                    "tip_img": [0.0, 0.0],
+                    "tip_rel": [0.0, 0.0, 0.0],
+                    "tip_norm": [0.0, 0.0, 0.0],
+                    "scale": 0.0,
+                    "valid": False,
+                }
+                seq += 1
+                sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
 
         finally:
             source.close()

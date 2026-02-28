@@ -13,7 +13,7 @@ This folder is the Raspberry Pi runtime project. Copy it to the Pi and run the s
 ## Quick Start (Pi)
 ```bash
 cd /home/pi/koten2026
-python3 app/pi_hand_sender.py --config config/endpoint.json --model ./hand_landmarker.task
+.venv/bin/python app/pi_hand_sender.py --config config/endpoint.json --model ./hand_landmarker.task
 ```
 
 ## Config

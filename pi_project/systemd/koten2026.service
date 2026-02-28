@@ -8,7 +8,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/koten2026
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/pi/koten2026/app/pi_hand_sender.py --config /home/pi/koten2026/config/endpoint.json --model /home/pi/koten2026/hand_landmarker.task
+ExecStart=/home/pi/koten2026/.venv/bin/python /home/pi/koten2026/app/pi_hand_sender.py --config /home/pi/koten2026/config/endpoint.json --model /home/pi/koten2026/hand_landmarker.task
 Restart=always
 RestartSec=2
 
