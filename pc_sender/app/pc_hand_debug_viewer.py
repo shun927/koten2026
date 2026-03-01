@@ -1,4 +1,8 @@
+# .\.venv\Scripts\python .\pc_sender\app\pc_hand_debug_viewer.py --model .\pc_sender\models\hand_landmarker.task --camera 0 --flip --backend msmf
+# 自由に動く:　.\.venv\Scripts\python .\pc_sender\app\pc_hand_debug_viewer.py --model .\pc_sender\models\hand_landmarker.task --camera 0 --flip --backend msmf --center none
+# 固定したいとき: .\.venv\Scripts\python .\pc_sender\app\pc_hand_debug_viewer.py --model .\pc_sender\models\hand_landmarker.task --camera 0 --flip --backend msmf --center wrist
 import argparse
+import math
 import time
 from pathlib import Path
 
@@ -53,19 +57,126 @@ HAND_CONNECTIONS: tuple[tuple[int, int], ...] = (
 )
 
 
-def _draw_hand(frame_bgr, hand_landmarks, color=(0, 255, 0)) -> None:
-    h, w = frame_bgr.shape[:2]
+def _rot_yaw_pitch(points_xyz: np.ndarray, yaw_deg: float, pitch_deg: float) -> np.ndarray:
+    yaw = math.radians(yaw_deg)
+    pitch = math.radians(pitch_deg)
 
-    pts = []
-    for lm in hand_landmarks:
-        pts.append((int(lm.x * w), int(lm.y * h)))
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+
+    # Yaw around Y axis, then pitch around X axis.
+    r_yaw = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]], dtype=np.float32)
+    r_pitch = np.array([[1.0, 0.0, 0.0], [0.0, cp, -sp], [0.0, sp, cp]], dtype=np.float32)
+    r = (r_pitch @ r_yaw).astype(np.float32)
+
+    return (points_xyz @ r.T).astype(np.float32)
+
+
+def _project_points(
+    points_xyz: np.ndarray,
+    canvas_w: int,
+    canvas_h: int,
+    focal_px: float,
+    camera_dist: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Perspective project 3D points to 2D.
+    Returns (pts_2d_int Nx2, valid_mask N).
+    """
+    p = np.asarray(points_xyz, dtype=np.float32)
+    z = p[:, 2] + float(camera_dist)
+    valid = z > 1e-3
+
+    cx, cy = canvas_w * 0.5, canvas_h * 0.5
+    x2 = cx + focal_px * (p[:, 0] / z)
+    y2 = cy - focal_px * (p[:, 1] / z)
+    pts2 = np.stack([x2, y2], axis=1)
+    pts2i = np.round(pts2).astype(np.int32)
+    return pts2i, valid
+
+
+def _draw_axes(canvas_bgr: np.ndarray, yaw_deg: float, pitch_deg: float, focal_px: float, camera_dist: float) -> None:
+    # Axes in local hand space (after rotation): X=red, Y=green, Z=blue.
+    axis_len = 0.25
+    axes = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [axis_len, 0.0, 0.0],
+            [0.0, axis_len, 0.0],
+            [0.0, 0.0, axis_len],
+        ],
+        dtype=np.float32,
+    )
+    axes_r = _rot_yaw_pitch(axes, yaw_deg=yaw_deg, pitch_deg=pitch_deg)
+    pts2i, valid = _project_points(
+        axes_r, canvas_w=canvas_bgr.shape[1], canvas_h=canvas_bgr.shape[0], focal_px=focal_px, camera_dist=camera_dist
+    )
+    if not (valid[0] and valid[1] and valid[2] and valid[3]):
+        return
+
+    o = tuple(int(v) for v in pts2i[0])
+    cv2.line(canvas_bgr, o, tuple(int(v) for v in pts2i[1]), (0, 0, 255), 2)  # X
+    cv2.line(canvas_bgr, o, tuple(int(v) for v in pts2i[2]), (0, 255, 0), 2)  # Y
+    cv2.line(canvas_bgr, o, tuple(int(v) for v in pts2i[3]), (255, 0, 0), 2)  # Z
+
+
+def _landmarks_to_hand_xyz(hand_landmarks, center_mode: str) -> np.ndarray:
+    """
+    Convert MediaPipe hand landmarks to a 3D point cloud.
+    - X/Y come from normalized image coords (centered at 0.5).
+    - Z comes from landmark.z (rough depth). We invert sign so "toward camera" is +Z.
+
+    center_mode:
+      - "wrist": subtract wrist (landmark 0) so the hand stays at origin
+      - "none": keep absolute (image-centered) position so the hand can translate
+    """
+    pts = np.array([[lm.x - 0.5, -(lm.y - 0.5), -lm.z] for lm in hand_landmarks], dtype=np.float32)  # (21,3)
+    if center_mode == "wrist":
+        pts -= pts[0:1]
+    elif center_mode == "none":
+        pass
+    else:
+        raise ValueError(f"Unknown center_mode: {center_mode}")
+    return pts
+
+
+def _ema_update(prev: np.ndarray | None, cur: np.ndarray, alpha: float) -> np.ndarray:
+    """
+    Exponential moving average.
+    alpha: weight of current sample in [0,1]. 1.0 means no smoothing.
+    """
+    a = float(alpha)
+    if prev is None or a >= 0.999:
+        return cur.astype(np.float32, copy=False)
+    if a <= 0.001:
+        return prev.astype(np.float32, copy=False)
+    return (a * cur + (1.0 - a) * prev).astype(np.float32)
+
+
+def _draw_hand_3d(
+    canvas_bgr: np.ndarray,
+    hand_xyz: np.ndarray,
+    yaw_deg: float,
+    pitch_deg: float,
+    focal_px: float,
+    camera_dist: float,
+    color=(200, 200, 200),
+) -> None:
+    pts_r = _rot_yaw_pitch(hand_xyz, yaw_deg=yaw_deg, pitch_deg=pitch_deg)
+    pts2i, valid = _project_points(
+        pts_r, canvas_w=canvas_bgr.shape[1], canvas_h=canvas_bgr.shape[0], focal_px=focal_px, camera_dist=camera_dist
+    )
 
     for a, b in HAND_CONNECTIONS:
-        if 0 <= a < len(pts) and 0 <= b < len(pts):
-            cv2.line(frame_bgr, pts[a], pts[b], color, 2)
+        if 0 <= a < len(pts2i) and 0 <= b < len(pts2i) and valid[a] and valid[b]:
+            cv2.line(canvas_bgr, tuple(int(v) for v in pts2i[a]), tuple(int(v) for v in pts2i[b]), color, 2)
 
-    for (x, y) in pts:
-        cv2.circle(frame_bgr, (x, y), 2, color, -1)
+    for i, (x, y) in enumerate(pts2i):
+        if not valid[i]:
+            continue
+        r = 5 if i == 8 else 3  # index fingertip highlighted
+        c = (0, 0, 255) if i == 8 else color
+        cv2.circle(canvas_bgr, (int(x), int(y)), r, c, -1)
 
 
 def _to_mp_image(frame_rgb):
@@ -122,6 +233,20 @@ def main() -> int:
     parser.add_argument("--max-hands", type=int, default=2)
     parser.add_argument("--flip", action="store_true", help="Mirror horizontally for easy checking")
     parser.add_argument("--print-fps", action="store_true")
+    parser.add_argument("--viewer-size", type=int, default=800, help="3D viewer canvas size (square)")
+    parser.add_argument(
+        "--center",
+        type=str,
+        default="none",
+        choices=["none", "wrist"],
+        help='3D centering mode. "none" allows translation; "wrist" locks wrist to origin.',
+    )
+    parser.add_argument(
+        "--smooth-alpha",
+        type=float,
+        default=0.35,
+        help="EMA smoothing (0..1). Lower is smoother, higher follows faster. 1 disables smoothing.",
+    )
     args = parser.parse_args()
 
     model_path = Path(args.model)
@@ -137,23 +262,28 @@ def main() -> int:
 
     last_fps_t = time.time()
     frames = 0
+    yaw_deg = -20.0
+    pitch_deg = 15.0
+    camera_dist = 1.6
+
+    # Per-hand smoothing state (keyed by handedness when available).
+    smoothed_by_key: dict[str, np.ndarray] = {}
 
     try:
         while True:
             ok, frame_bgr = cap.read()
             if not ok:
-                # Show placeholder to make it obvious we are not receiving frames.
-                placeholder = np.zeros((args.height, args.width, 3), dtype=np.uint8)
+                placeholder = np.zeros((args.viewer_size, args.viewer_size, 3), dtype=np.uint8)
                 cv2.putText(
                     placeholder,
                     "No frames from camera (check privacy / index / backend)",
-                    (10, 30),
+                    (10, 40),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
                     (0, 0, 255),
                     2,
                 )
-                cv2.imshow("pc_hand_debug_viewer (ESC to quit)", placeholder)
+                cv2.imshow("pc_hand_debug_viewer_3d (ESC to quit)", placeholder)
                 if cv2.waitKey(1) & 0xFF == 27:
                     break
                 time.sleep(0.05)
@@ -162,45 +292,46 @@ def main() -> int:
             if args.flip:
                 frame_bgr = cv2.flip(frame_bgr, 1)
 
-            # If frame is extremely dark, overlay a hint (common when privacy blocks camera).
-            try:
-                mean_v = float(frame_bgr.mean())
-                if mean_v < 3.0:
-                    cv2.putText(
-                        frame_bgr,
-                        "Frame is nearly black (check camera privacy / lens / other apps)",
-                        (10, frame_bgr.shape[0] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        (0, 0, 255),
-                        2,
-                    )
-            except Exception:
-                pass
-
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             mp_image = _to_mp_image(frame_rgb)
             t_ms = _now_ms()
             result = landmarker.detect_for_video(mp_image, t_ms)
 
             hand_landmarks_list = result.hand_landmarks or []
+
+            canvas = np.zeros((args.viewer_size, args.viewer_size, 3), dtype=np.uint8)
+            canvas[:] = (18, 18, 18)
+            focal_px = args.viewer_size * 0.9
+
+            _draw_axes(canvas, yaw_deg=yaw_deg, pitch_deg=pitch_deg, focal_px=focal_px, camera_dist=camera_dist)
+
+            handedness_list = result.handedness or []
             for hand_index, hand_landmarks in enumerate(hand_landmarks_list):
-                _draw_hand(frame_bgr, hand_landmarks)
-
-                # Highlight index_finger_tip (8)
-                tip = hand_landmarks[8]
-                h, w = frame_bgr.shape[:2]
-                cx, cy = int(tip.x * w), int(tip.y * h)
-                cv2.circle(frame_bgr, (cx, cy), 8, (0, 0, 255), 2)
-
                 label = "Unknown"
                 score = 0.0
-                if result.handedness and hand_index < len(result.handedness) and result.handedness[hand_index]:
-                    top = result.handedness[hand_index][0]
+                if hand_index < len(handedness_list) and handedness_list[hand_index]:
+                    top = handedness_list[hand_index][0]
                     label = getattr(top, "category_name", None) or getattr(top, "display_name", None) or "Unknown"
                     score = float(getattr(top, "score", 0.0) or 0.0)
+
+                hand_xyz = _landmarks_to_hand_xyz(hand_landmarks, center_mode=args.center)
+                key = label if label != "Unknown" else f"hand{hand_index}"
+                prev = smoothed_by_key.get(key)
+                hand_xyz_s = _ema_update(prev, hand_xyz, alpha=args.smooth_alpha)
+                smoothed_by_key[key] = hand_xyz_s
+
+                _draw_hand_3d(
+                    canvas,
+                    hand_xyz_s,
+                    yaw_deg=yaw_deg,
+                    pitch_deg=pitch_deg,
+                    focal_px=focal_px,
+                    camera_dist=camera_dist,
+                    color=(200, 200, 200) if hand_index == 0 else (120, 200, 255),
+                )
+
                 cv2.putText(
-                    frame_bgr,
+                    canvas,
                     f"{hand_index}:{label} {score:.2f}",
                     (10, 30 + 24 * hand_index),
                     cv2.FONT_HERSHEY_SIMPLEX,
@@ -210,17 +341,33 @@ def main() -> int:
                 )
 
             cv2.putText(
-                frame_bgr,
-                f"cam={args.camera} api={opened_api} size={frame_bgr.shape[1]}x{frame_bgr.shape[0]} hands={len(hand_landmarks_list)}",
-                (10, frame_bgr.shape[0] - 10),
+                canvas,
+                f"cam={args.camera} api={opened_api} hands={len(hand_landmarks_list)}  center={args.center}  yaw/pitch={yaw_deg:.0f}/{pitch_deg:.0f}  dist={camera_dist:.2f}  smooth={args.smooth_alpha:.2f}",
+                (10, canvas.shape[0] - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
                 (255, 255, 255),
                 2,
             )
-            cv2.imshow("pc_hand_debug_viewer (ESC to quit)", frame_bgr)
-            if cv2.waitKey(1) & 0xFF == 27:
+            cv2.imshow("pc_hand_debug_viewer_3d (ESC to quit)", canvas)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC
                 break
+            if key in (ord("a"), ord("A")):
+                yaw_deg -= 3.0
+            elif key in (ord("d"), ord("D")):
+                yaw_deg += 3.0
+            elif key in (ord("w"), ord("W")):
+                pitch_deg += 3.0
+            elif key in (ord("s"), ord("S")):
+                pitch_deg -= 3.0
+            elif key in (ord("q"), ord("Q")):
+                camera_dist = max(0.5, camera_dist - 0.05)
+            elif key in (ord("e"), ord("E")):
+                camera_dist = min(4.0, camera_dist + 0.05)
+            elif key in (ord("r"), ord("R")):
+                yaw_deg, pitch_deg, camera_dist = -20.0, 15.0, 1.6
 
             frames += 1
             if args.print_fps:

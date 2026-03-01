@@ -9,25 +9,55 @@
 
 ## 2. 受信（PC→touch）
 - 受信ポート: `5005`（UDP DAT）
-- メッセージ仕様: `docs/requirements_message_format.md`
+
+### 2.1 推奨：Box平面（ArUco）モード
+- メッセージ仕様: `docs/requirements_message_format_box_plane.md`（`v=2 kind=box_plane`）
+- 利用フィールド（主要）:
+  - `t_ms`, `seq`, `aruco.ok`, `aruco.stale`, `aruco.age_ms`
+  - `hands[].valid`, `hands[].lm_box`, `hands[].lm_img`
+
+### 2.2 旧仕様（参考）：指先相対3Dモード
+既存資産との互換のために残します。新規はBox平面モードを推奨。
+- メッセージ仕様: `docs/requirements_message_format.md`（`v=1`）
 - 利用フィールド:
   - `t_ms`, `seq`, `valid`, `tip_img`, `tip_norm`
-- 送信仕様:
-  - 「検出した手ごとに1メッセージ」が来る（両手なら最大2件）
-  - `hand_index` は同フレーム内の並び番号（0/1）。識別の正本ではない
 
 ## 3. 左右判定（X位置ベース）
 作品の正面と左右穴が固定である前提で、左右は `tip_img.x` で決める。
 
+### 3.1 Box平面（推奨）
+`hands[].lm_box` があるときは、手首（landmark 0）の `x` で左右を固定する。
 - 2件来た場合:
-  - `tip_img.x` が小さい方 → `left`
-  - `tip_img.x` が大きい方 → `right`
+  - `wrist_x` が小さい方 → `left`
+  - `wrist_x` が大きい方 → `right`
 - 1件だけ来た場合:
-  - `tip_img.x < 0.5` → `left`
+  - `wrist_x < 0.5` → `left`
   - それ以外 → `right`
-- `hand`（Left/Right）は参考値として保持し、最終判定には使わない
+
+`aruco.ok=false` の場合は `hands[].lm_img`（画像正規化座標）の手首 `x` にフォールバックしてよい。
+
+補足：`hand`（Left/Right）は参考値として保持し、最終判定には使わない（遮蔽で入れ替わることがある）。
+
+### 3.2 旧仕様（tip_img）
+2件来た場合:
+- `tip_img.x` が小さい方 → `left`
+- `tip_img.x` が大きい方 → `right`
+
+1件だけ来た場合:
+- `tip_img.x < 0.5` → `left`
+- それ以外 → `right`
 
 ## 4. 作品座標への変換（box座標）
+### 4.1 Box平面（推奨）
+- 入力は `hands[].lm_box`（0..1）を使用（ArUcoで箱の正面平面に写像済み）
+- Unityで手CGを動かす用途なら、まずは次の2点から始めるのが簡単:
+  - 手首: landmark `0`
+  - 人差し指先: landmark `8`
+
+拡張（手全体）:
+- 21点すべてをUnityへ送って、Unity側でボーン/IKへ落とす
+
+### 4.2 旧仕様（tip_norm）
 - 入力は `tip_norm (x,y,z)` を使用
 - touch内で軸ごとに `scale` / `offset` / `clamp(0..1)` を適用して `box_x, box_y, box_z` を生成
 - まずは `0..1` の正規化で統一（箱サイズが決まったら最後に `W/H/D` を掛ける）
@@ -47,11 +77,32 @@
 - 復帰時:
   - `100ms` 程度でフェードイン（値ジャンプ抑制）
 
+Box平面モード補足（ArUco一時隠れ）：
+- `aruco.ok=false` の間は `lm_box` が無い（またはホールド）ので、以下のどちらかを推奨
+  - `aruco.stale=true` の間は値を採用（`age_ms` が小さい間だけ）
+  - `aruco.ok=false` が一定時間続いたら `valid=0` 扱いにしてフェードアウト
+
 ## 7. OSC出力（固定）
 UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で送る前提。
 
+### 7.1 最小（指先だけ：互換重視）
+旧仕様と同じ形で出せるようにし、Box平面のときは `z=0` 固定で送る。
 - 左穴: `/box/finger/left` に `x y z valid`（float,float,float,int）
 - 右穴: `/box/finger/right` に `x y z valid`（float,float,float,int）
+
+### 7.2 推奨（手の21点：Unityで手CGを動かす）
+1メッセージで42個（x0,y0,...,x20,y20）を送る。
+- 左手: `/box/hand/left/lm2d` に 42 floats（0..1、箱平面）
+- 右手: `/box/hand/right/lm2d` に 42 floats（0..1、箱平面）
+- `valid` は別アドレスで送る（int）
+  - `/box/hand/left/valid`
+  - `/box/hand/right/valid`
+
+任意（デバッグ）：
+- 平面推定の状態（箱平面モードのとき）
+  - `/box/aruco/ok`（int 0/1）
+  - `/box/aruco/stale`（int 0/1）
+  - `/box/aruco/age_ms`（int）
 
 必要なら追加:
 - デバッグ用に `seq`（int）, `t_ms`（int）を別アドレスで送る

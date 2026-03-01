@@ -20,16 +20,16 @@
  - 例: `/box/finger/left` と `/box/finger/right` に `x y z valid` を送る
 
 ## Box体験の前提（おすすめ）
-- カメラは「箱の上面中央から下向き」に固定（遮蔽が減って追跡が安定）
-- 穴は側面でもOK。ただし指先が見える姿勢に誘導するガイドがあると良い
+- カメラは「箱の正面中心」から正面向き（箱の正面平面にできるだけ垂直）に固定（ArUco平面推定が安定）
+- 穴は左右側面。手が重ならないように離す/仕切りを入れると安定
 - 座標はまず `0..1` の正規化で統一（箱サイズは後から掛け算で対応）
 - 両手を使うなら送信側は `max_hands=2`、touch側でX位置ベースで左右を決める
 
 ## 体験の流れ（案）
 1. 体験者がboxの側面穴から指（人差し指をさした状態）を差し入れる
-2. box上面のカメラが指先を撮影
-3. 送信PCが手のランドマークを推定し、指先の相対3DをtouchへUDP送信
-4. touchが「作品用のbox座標」に変換し、UnityPCとsoundPCへOSC配信
+2. box正面のカメラが箱の正面平面（ArUco）と手を撮影
+3. 送信PCが手ランドマークを推定し、箱平面（0..1）へ写像してtouchへUDP送信
+4. touchが左右割り当て/平滑化/ロスト処理を行い、UnityPCとsoundPCへOSC配信
 5. Unityが映像を更新、soundが音を更新
 
 ## TouchDesigner実装手順（集約先）
@@ -38,7 +38,7 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 
 ## 動作確認環境（目安）
 - Python：`3.12`（64bit推奨。`3.11` でも動くことが多い）
-- 主要パッケージ：`mediapipe==0.10.32` / `opencv-python==4.10.0.84` / `numpy==1.26.4`
+- 主要パッケージ：`mediapipe==0.10.32` / `opencv-contrib-python==4.10.0.84` / `numpy==1.26.4`
 - `uv` のバージョン確認：`uv self version`（`uv version` は `pyproject.toml` が無いとエラー）
 
 ## セットアップ（Windows / PowerShell想定）
@@ -90,6 +90,20 @@ Copy-Item .\config\endpoint.example.json .\config\endpoint.json
 ```powershell
 .\.venv\Scripts\python .\app\pc_hand_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --flip
 ```
+
+## Box平面（ArUcoで座標安定化 → TouchDesigner/Unityへ送信）
+箱の正面四隅にArUcoを貼っておくと、画像座標を「箱の正面平面（0..1）」へ安定してマップできます（奥行き無し前提）。
+
+注意：ArUcoは `opencv-contrib-python` が必要です。既に `opencv-python` を入れている場合は入れ替えてください。
+
+実行例（四隅ID=TL,TR,BR,BL が `0,1,2,3` の場合）：
+```powershell
+.\.venv\Scripts\python .\app\pc_hand_box_sender.py --config .\config\endpoint.json --model .\models\hand_landmarker.task --camera 0 --preview --aruco-corner-ids 0,1,2,3
+```
+
+補足：
+- マーカーが一瞬隠れる場合に備えて、送信側は直近の平面推定を短時間だけ再利用できます（既定 `--aruco-hold-ms 300`）。
+- TouchDesignerを統合ハブにする場合は、`config/endpoint.json` の `host` を TouchDesigner PC のIPにします（受信UDPポートは touch 側で `5005`）。
 
 ### 画面が黒い / 映らないとき
 - `--camera 1` など、カメラインデックスを変えて試す

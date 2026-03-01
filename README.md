@@ -1,6 +1,9 @@
 # koten2026
 
-このリポジトリは、PC + Webカメラで「人差し指先端の相対3D」を推定し、TouchDesignerへUDP送信するための実装を含みます。
+このリポジトリは、PC + Webカメラで手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
+
+- 旧：人差し指先端の相対3D（`docs/requirements_message_format.md`）
+- 推奨：箱の正面平面（ArUcoで0..1へ写像、両手21点、`docs/requirements_message_format_box_plane.md`）
 
 ## 作品システム（案）
 - PC：Webカメラ入力＋手推論（人差し指先端の相対3D）を生成してtouchへ送信
@@ -20,16 +23,29 @@
  - 例: `/box/finger/left` と `/box/finger/right` に `x y z valid` を送る
 
 ## Box体験の前提（おすすめ）
-- カメラは「箱の上面中央から下向き」に固定（遮蔽が減って追跡が安定）
-- 穴は側面でもOK。ただし指先が見える姿勢に誘導するガイドがあると良い
+- カメラは「箱の正面中心」から正面向き（箱の正面平面にできるだけ垂直）に固定（AruCo平面推定が安定）
+- 穴は左右側面。手が重ならないように離す/仕切りを入れると安定
 - 座標はまず `0..1` の正規化で統一（箱サイズは後から掛け算で対応）
 - 両手を使うなら送信側は `max_hands=2`、touch側でX位置ベースで左右を決める
 
+## Unityでの運用（TouchDesignerを統合ハブにする）
+映像が全部CGで、奥行き無し（箱の正面平面）なら、次の構成を推奨します。
+
+- 推奨（現場調整が強い）
+  - Python → TouchDesigner（受信/左右判定/平滑化/ロスト/デバッグ/OSC変換）→ Unity
+- 代替（最短・シンプル）
+  - Python → Unity 直結（UDP/JSON）
+
+要件まとめ：
+- Unity要件：`docs/requirements_unity.md`
+- TouchDesigner要件：`docs/requirements_touch.md`
+- メッセージ仕様（箱平面）：`docs/requirements_message_format_box_plane.md`
+
 ## 体験の流れ（案）
 1. 体験者がboxの側面穴から指（人差し指をさした状態）を差し入れる
-2. box上面のカメラが指先を撮影
-3. PCが手のランドマークを推定し、指先の相対3DをtouchへUDP送信
-4. touchが「作品用のbox座標」に変換し、UnityPCとsoundPCへOSC配信
+2. box正面のカメラが箱の正面平面（ArUco）と手を撮影
+3. 送信PCが手ランドマークを推定し、箱平面（0..1）へ写像してtouchへUDP送信
+4. touchが左右割り当て/平滑化/ロスト処理を行い、UnityPCとsoundPCへOSC配信
 5. Unityが映像を更新、soundが音を更新
 
 ## TouchDesigner実装手順（集約先）
@@ -57,7 +73,9 @@ koten2026/
   README.md
   .gitignore
   docs/
+    considerations.md
     requirements_raspberrypi.md
+    requirements_network_pc_direct.md
     requirements_message_format.md
     requirements_touch.md
   pc_sender/
@@ -67,6 +85,9 @@ koten2026/
       endpoint.example.json
     app/
       pc_hand_sender.py
+      pc_hand_debug_viewer.py
+    models/
+      hand_landmarker.task
   pc_receiver/
     udp_receiver.py
 ```
