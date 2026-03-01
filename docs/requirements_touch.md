@@ -1,13 +1,13 @@
 # TouchDesigner 実装要件（統合ハブ）
 
-このドキュメントは、TouchDesigner を「統合ハブ」として使い、Raspberry Pi から受け取った指先座標を作品用の box 座標に変換して UnityPC / soundPC へ配信するための要件・実装仕様です。
+このドキュメントは、TouchDesigner を「統合ハブ」として使い、送信PCから受け取った指先座標を作品用の box 座標に変換して UnityPC / soundPC へ配信するための要件・実装仕様です。
 
 ## 1. 役割
-- 入力: Pi → touch（UDP / JSON）
+- 入力: PC → touch（UDP / JSON）
 - 処理: 左右割り当て、平滑化、範囲制限、ロスト処理、box座標化（0..1）
 - 出力: touch → Unity / sound（OSC / UDP）
 
-## 2. 受信（Pi→touch）
+## 2. 受信（PC→touch）
 - 受信ポート: `5005`（UDP DAT）
 - メッセージ仕様: `docs/requirements_message_format.md`
 - 利用フィールド:
@@ -56,6 +56,10 @@ UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で
 必要なら追加:
 - デバッグ用に `seq`（int）, `t_ms`（int）を別アドレスで送る
 
+### 7.1 2台運用（有線直結）の注意
+直結で固定IP運用する場合は、OSC Out の宛先IPを「受信するPCの固定IP」に設定する。
+例：自分のPCが `192.168.10.2` の場合、TouchDesignerのOSC Outは `192.168.10.2` 宛て。
+
 ## 8. 監視項目（本番時）
 - 受信FPS（目標15以上）
 - `seq` 欠損率
@@ -89,4 +93,3 @@ UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で
 2. `monitor_seq`（Script DAT/CHOP）
 3. `trail_left_right`（Trail CHOP）
 4. `text_status`（Text TOP）
-

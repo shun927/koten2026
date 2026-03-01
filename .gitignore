@@ -1,8 +1,14 @@
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
 .DS_Store
+Thumbs.db
 
-# Local runtime config / large assets
-hand_landmarker.task
-pi_project/config/endpoint.json
+# MediaPipe Tasks model (downloaded separately)
+*.task
+
+# Local config
+**/config/endpoint.json
+
