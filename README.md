@@ -27,6 +27,7 @@
 - 穴は左右側面。手が重ならないように離す/仕切りを入れると安定
 - 座標はまず `0..1` の正規化で統一（箱サイズは後から掛け算で対応）
 - 両手を使うなら送信側は `max_hands=2`、touch側でX位置ベースで左右を決める
+- box: 縦20㎝横50㎝高さ20㎝想定
 
 ## Unityでの運用（TouchDesignerを統合ハブにする）
 映像が全部CGで、奥行き無し（箱の正面平面）なら、次の構成を推奨します。
@@ -84,8 +85,8 @@ koten2026/
     config/
       endpoint.example.json
     app/
-      pc_hand_sender.py
-      pc_hand_debug_viewer.py
+      pc_hand_box_sender.py
+      pc_hand_box_debug_viewer.py
     models/
       hand_landmarker.task
   pc_receiver/
@@ -95,7 +96,6 @@ koten2026/
 ## 用意するもの（ハード）
 - PC（Windows想定）
 - Webカメラ（USB想定）
-- カメラ固定具（箱の上面に固定できるもの）
 
 ## 用意するもの（ファイル）
 - `pc_sender/models/hand_landmarker.task`（MediaPipe Tasks公式配布のHand Landmarkerモデルを入手して配置）

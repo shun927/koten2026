@@ -1,45 +1,9 @@
 """
-pc_hand_box_sender.py
-
-箱の正面(1枚の平面)を正面カメラで撮影し、ArUcoで箱の平面を推定して、
-MediaPipe Hand Landmarker の21ランドマークを「箱平面(0..1)」へ写像し、UDP(JSON)で送信します。
-
-想定用途：
-- Unityで「箱を正面から見たCG映像」を描画し、左右の手CGを平面上で動かす(奥行きは一旦使わない)
-
-起動例(PowerShell / pc_sender 直下で実行）：
-  ..\.\.venv\Scripts\python .\app\pc_hand_box_sender.py `
-  --config .\config\endpoint.json `
-  --model .\models\hand_landmarker.task `
-  --camera 0 --backend msmf --preview --print-fps `
-  --aruco-dict DICT_4X4_50 `
-  --aruco-corner-ids 0,1,2,3
-
-注意(ArUcoの依存):
-- ArUcoは OpenCV の contrib モジュール(cv2.aruco)が必要です。
-- `opencv-python` では `cv2.aruco` が無いことが多いので、`opencv-contrib-python` に入れ替えます。
-
-入れ替え例（このプロジェクトの venv を使う想定）：
-  # まず入っている方を消す(どちらかが入っていればOK)
-  .\\.venv\\Scripts\\pip uninstall -y opencv-python opencv-contrib-python
-  # requirements.txt に合わせて入れる
-  .\\.venv\\Scripts\\pip install opencv-contrib-python==4.10.0.84
-
-ArUco ID の用意（例）：
-- `DICT_4X4_50` を使い、箱の正面四隅に 4枚貼ります
-- ID は TL,TR,BR,BL の順で `--aruco-corner-ids` に渡します
-  例：左上=0, 右上=1, 右下=2, 左下=3 → `--aruco-corner-ids 0,1,2,3`
-
-実運用のコツ：
-- `--preview` を付けて、四隅マーカーが常に検出される(aruco_ok=true)配置/照明にする
-- 両手の割り当ては `hand`(Left/Right)だけに頼らず、入口位置（例：手首 lm_box[0].x)で固定すると安定
+pc_sender直下
+..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --backend msmf --flip --aruco-corner-ids 0,1,2,3
 """
-
 import argparse
-import json
-import socket
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -50,23 +14,8 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
 
-@dataclass(frozen=True)
-class Endpoint:
-    host: str
-    port: int
-    src: str
-
-
 def _now_ms() -> int:
     return int(time.time() * 1000)
-
-
-def _read_endpoint(path: Path) -> Endpoint:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    host = str(data.get("host", "127.0.0.1"))
-    port = int(data.get("port", 5005))
-    src = str(data.get("src", "pc"))
-    return Endpoint(host=host, port=port, src=src)
 
 
 def _build_landmarker(model_path: Path, num_hands: int) -> mp_vision.HandLandmarker:
@@ -115,22 +64,6 @@ def _open_camera(camera_index: int, backend: str):
     raise RuntimeError(f"Failed to open camera {camera_index} (backend={backend})")
 
 
-def _hand_label(handedness_entry) -> tuple[str, float]:
-    if not handedness_entry:
-        return ("Unknown", 0.0)
-    top = handedness_entry[0]
-    name = getattr(top, "category_name", None) or getattr(top, "display_name", None) or "Unknown"
-    score = float(getattr(top, "score", 0.0) or 0.0)
-    if name not in ("Left", "Right"):
-        name = "Unknown"
-    return (name, score)
-
-
-def _send_udp(sock: socket.socket, endpoint: Endpoint, payload: dict) -> None:
-    msg = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    sock.sendto(msg, (endpoint.host, endpoint.port))
-
-
 def _parse_int_list(s: str) -> list[int]:
     out: list[int] = []
     for part in s.split(","):
@@ -151,7 +84,6 @@ def _aruco_dict(name: str):
 
 def _detect_aruco(gray: np.ndarray, dictionary, detector_params):
     aruco = cv2.aruco
-    # OpenCV 4.7+ has ArucoDetector; older uses detectMarkers.
     if hasattr(aruco, "ArucoDetector"):
         detector = aruco.ArucoDetector(dictionary, detector_params)
         corners, ids, rejected = detector.detectMarkers(gray)
@@ -175,10 +107,6 @@ def _homography_from_aruco_centers(
     centers_px: dict[int, tuple[float, float]],
     corner_ids: list[int],
 ) -> np.ndarray | None:
-    """
-    corner_ids order: TL, TR, BR, BL (image when looking at the box from the front).
-    Returns H that maps image pixel -> box normalized (0..1, 0..1).
-    """
     needed = [cid for cid in corner_ids if cid not in centers_px]
     if needed:
         return None
@@ -197,18 +125,29 @@ def _warp_points(pts_px: np.ndarray, h_img_to_box: np.ndarray) -> np.ndarray:
     return out.astype(np.float32)
 
 
-def _ema(prev: np.ndarray | None, cur: np.ndarray, alpha: float) -> np.ndarray:
-    a = float(alpha)
-    if prev is None or a >= 0.999:
-        return cur.astype(np.float32, copy=False)
-    if a <= 0.001:
-        return prev.astype(np.float32, copy=False)
-    return (a * cur + (1.0 - a) * prev).astype(np.float32)
+def _draw_landmarks_on_image(frame_bgr: np.ndarray, hand_landmarks_list) -> None:
+    h, w = frame_bgr.shape[:2]
+    for hand_landmarks in hand_landmarks_list:
+        pts = np.array([[lm.x * w, lm.y * h] for lm in hand_landmarks], dtype=np.float32)
+        for (x, y) in pts:
+            cv2.circle(frame_bgr, (int(x), int(y)), 2, (0, 255, 0), -1)
+        tip = pts[8]
+        cv2.circle(frame_bgr, (int(tip[0]), int(tip[1])), 6, (0, 0, 255), 2)
+
+
+def _draw_landmarks_on_plane(plane_bgr: np.ndarray, lm_box: np.ndarray, color: tuple[int, int, int]) -> None:
+    h, w = plane_bgr.shape[:2]
+    pts = lm_box.copy()
+    pts[:, 0] *= w
+    pts[:, 1] *= h
+    for (x, y) in pts:
+        cv2.circle(plane_bgr, (int(x), int(y)), 2, color, -1)
+    tip = pts[8]
+    cv2.circle(plane_bgr, (int(tip[0]), int(tip[1])), 6, (0, 0, 255), 2)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, required=True, help="Path to endpoint.json")
     parser.add_argument("--model", type=str, required=True, help="Path to hand_landmarker.task")
     parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index")
     parser.add_argument(
@@ -221,8 +160,8 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--max-hands", type=int, default=2)
-    parser.add_argument("--preview", action="store_true", help="Show debug preview window")
-    parser.add_argument("--print-fps", action="store_true")
+    parser.add_argument("--flip", action="store_true", help="Mirror horizontally for easy checking")
+    parser.add_argument("--viewer-size", type=int, default=720, help="Box plane canvas size (square)")
     parser.add_argument(
         "--aruco-dict",
         type=str,
@@ -241,15 +180,8 @@ def main() -> int:
         default=300,
         help="Reuse last valid ArUco plane for this duration (ms) when markers are temporarily occluded.",
     )
-    parser.add_argument(
-        "--smooth-alpha",
-        type=float,
-        default=0.35,
-        help="EMA smoothing for box landmarks (0..1). 1 disables smoothing.",
-    )
     args = parser.parse_args()
 
-    endpoint = _read_endpoint(Path(args.config))
     model_path = Path(args.model)
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
@@ -262,18 +194,10 @@ def main() -> int:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     landmarker = _build_landmarker(model_path, num_hands=args.max_hands)
-
     dictionary = _aruco_dict(args.aruco_dict)
     detector_params = cv2.aruco.DetectorParameters()
 
-    seq = 0
-    last_stats_t = time.time()
-    frames = 0
-
-    # Smoothing state per hand "key"
-    smoothed: dict[str, np.ndarray] = {}
     last_h_img_to_box: np.ndarray | None = None
     last_h_t_ms: int | None = None
 
@@ -283,6 +207,9 @@ def main() -> int:
             if not ok:
                 time.sleep(0.03)
                 continue
+
+            if args.flip:
+                frame_bgr = cv2.flip(frame_bgr, 1)
 
             h_img, w_img = frame_bgr.shape[:2]
 
@@ -311,95 +238,56 @@ def main() -> int:
                 last_h_img_to_box = h_img_to_box
                 last_h_t_ms = int(t_ms)
 
-            hands_out: list[dict] = []
-            handedness_list = result.handedness or []
+            vis = frame_bgr.copy()
+            if ids is not None and hasattr(cv2.aruco, "drawDetectedMarkers"):
+                cv2.aruco.drawDetectedMarkers(vis, corners, ids)
+
+            _draw_landmarks_on_image(vis, result.hand_landmarks or [])
+
+            plane = np.zeros((args.viewer_size, args.viewer_size, 3), dtype=np.uint8)
+            plane[:] = (18, 18, 18)
+
+            # draw border
+            cv2.rectangle(plane, (0, 0), (plane.shape[1] - 1, plane.shape[0] - 1), (80, 80, 80), 1)
+
             hand_landmarks_list = result.hand_landmarks or []
-
-            for hand_index, hand_landmarks in enumerate(hand_landmarks_list):
-                label, conf = _hand_label(handedness_list[hand_index] if hand_index < len(handedness_list) else [])
-
-                lm_img_px = np.array([[lm.x * w_img, lm.y * h_img] for lm in hand_landmarks], dtype=np.float32)
-                lm_box = None
-                if h_img_to_box is not None:
+            if aruco_ok and h_img_to_box is not None:
+                for hand_index, hand_landmarks in enumerate(hand_landmarks_list):
+                    lm_img_px = np.array([[lm.x * w_img, lm.y * h_img] for lm in hand_landmarks], dtype=np.float32)
                     lm_box = _warp_points(lm_img_px, h_img_to_box)
-
-                    key = label if label != "Unknown" else f"hand{hand_index}"
-                    prev = smoothed.get(key)
-                    lm_box = _ema(prev, lm_box, alpha=args.smooth_alpha)
-                    smoothed[key] = lm_box
-
-                hands_out.append(
-                    {
-                        "hand_index": int(hand_index),
-                        "hand": label,
-                        "conf": float(conf),
-                        # Always include 2D image coords (normalized) for fallback assignment.
-                        "lm_img": [[float(lm.x), float(lm.y)] for lm in hand_landmarks],
-                        # When ArUco is visible: normalized box plane coords (0..1).
-                        "lm_box": None if lm_box is None else [[float(x), float(y)] for x, y in lm_box.tolist()],
-                        "valid": True,
-                    }
-                )
-
-            payload = {
-                "v": 2,
-                "kind": "box_plane",
-                "t_ms": int(t_ms),
-                "seq": int(seq),
-                "src": endpoint.src,
-                "cam": {"index": int(args.camera), "api": int(opened_api)},
-                "frame": {"w": int(w_img), "h": int(h_img)},
-                "aruco": {
-                    "dict": args.aruco_dict,
-                    "corner_ids": corner_ids,
-                    "detected_ids": [] if ids is None else [int(x) for x in ids.flatten().tolist()],
-                    "ok": bool(aruco_ok),
-                    "stale": bool(aruco_stale),
-                    "age_ms": int(aruco_age_ms),
-                    "hold_ms": int(args.aruco_hold_ms),
-                },
-                "hands": hands_out,
-            }
-            _send_udp(sock, endpoint, payload)
-
-            if args.preview:
-                vis = frame_bgr.copy()
-                if ids is not None and hasattr(cv2.aruco, "drawDetectedMarkers"):
-                    cv2.aruco.drawDetectedMarkers(vis, corners, ids)
-
-                if h_img_to_box is not None:
-                    # draw box corners (marker centers)
-                    for cid in corner_ids:
-                        cx, cy = centers_px[cid]
-                        cv2.circle(vis, (int(cx), int(cy)), 6, (0, 255, 0), -1)
-
+                    # clip for display
+                    lm_box = np.clip(lm_box, -0.2, 1.2)
+                    color = (200, 200, 200) if hand_index == 0 else (120, 200, 255)
+                    _draw_landmarks_on_plane(plane, lm_box, color=color)
+            else:
                 cv2.putText(
-                    vis,
-                    f"seq={seq} hands={len(hand_landmarks_list)} aruco_ok={aruco_ok} stale={aruco_stale} cam={args.camera} api={opened_api}",
-                    (10, 24),
+                    plane,
+                    "aruco.ok=false (no lm_box)",
+                    (10, 28),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
-                    (0, 255, 0),
+                    (0, 0, 255),
                     2,
                 )
-                cv2.imshow("pc_hand_box_sender (ESC to quit)", vis)
-                if cv2.waitKey(1) & 0xFF == 27:
-                    break
 
-            seq += 1
-            frames += 1
-            if args.print_fps:
-                now = time.time()
-                if now - last_stats_t >= 2.0:
-                    fps = frames / (now - last_stats_t)
-                    print(f"fps={fps:.1f} seq={seq} aruco_ok={h_img_to_box is not None} hands={len(hand_landmarks_list)}")
-                    last_stats_t = now
-                    frames = 0
+            cv2.putText(
+                vis,
+                f"cam={args.camera} api={opened_api} aruco_ok={aruco_ok} stale={aruco_stale} age_ms={aruco_age_ms}",
+                (10, 24),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2,
+            )
+
+            cv2.imshow("pc_hand_box_debug_camera (ESC to quit)", vis)
+            cv2.imshow("pc_hand_box_debug_plane (ESC to quit)", plane)
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
 
     finally:
         cap.release()
         cv2.destroyAllWindows()
-        sock.close()
         landmarker.close()
 
     return 0
@@ -407,3 +295,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

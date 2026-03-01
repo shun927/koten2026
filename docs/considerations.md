@@ -97,7 +97,7 @@
 ## 6. 開演前チェックリスト
 1. モデル配置 `pc_sender/models/hand_landmarker.task`
 2. `endpoint.json` のIP/ポート確認
-3. カメラプレビュー確認（`pc_hand_debug_viewer.py`）
+3. カメラプレビュー確認（`pc_sender/app/pc_hand_box_debug_viewer.py`）
 4. UDP受信確認（`pc_receiver/udp_receiver.py`）
 5. TouchDesigner左右判定/ロスト挙動確認
 6. Unity/soundのOSC受信確認

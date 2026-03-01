@@ -72,23 +72,21 @@ Copy-Item .\config\endpoint.example.json .\config\endpoint.json
 ```
 `config/endpoint.json` の `host`（TouchDesignerのIP）と `port` を環境に合わせて変更します。
 
-## 実行
+## 実行（Box平面：推奨）
 ```powershell
-.\.venv\Scripts\python .\app\pc_hand_sender.py --config .\config\endpoint.json --model .\models\hand_landmarker.task --camera 0 --preview --print-fps
+.\.venv\Scripts\python .\app\pc_hand_box_sender.py --config .\config\endpoint.json --model .\models\hand_landmarker.task --camera 0 --preview --print-fps --aruco-corner-ids 0,1,2,3
 ```
 
 補足：
 - `--camera` は `0` が一般的ですが、環境によって `1` などに変えてください。
 - `--preview` はデバッグ用です（ウィンドウを出します）。
 - `--backend` は `auto / dshow / msmf / any` が選べます。
-- `--reconnect-sec` はカメラ未取得時の再接続までの秒数です（既定 `2.0`）。
-- `--heartbeat-ms` はカメラ未取得中に `valid=false` を送る間隔です（既定 `250`）。
-- `--stats-interval-sec` は `--print-fps` 時の統計ログ間隔です（既定 `2.0`）。
+- `--aruco-corner-ids` は箱の正面四隅（TL,TR,BR,BL）のIDを指定します。
 
-## 映像デバッグ（おすすめ）
-認識できているかを映像にランドマーク表示して確認する場合：
+## Box平面のデバッグ（おすすめ）
+ArUcoが見えているか／箱平面（0..1）へ写像できているかを確認する場合：
 ```powershell
-.\.venv\Scripts\python .\app\pc_hand_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --flip
+.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --backend msmf --flip --aruco-corner-ids 0,1,2,3
 ```
 
 ## Box平面（ArUcoで座標安定化 → TouchDesigner/Unityへ送信）
@@ -111,6 +109,6 @@ Copy-Item .\config\endpoint.example.json .\config\endpoint.json
 - Windows「カメラのプライバシー設定」でデスクトップアプリのカメラ利用が許可されているか確認
 - OpenCVのバックエンドを変える（黒画面対策）：
 ```powershell
-.\.venv\Scripts\python .\app\pc_hand_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --flip --backend msmf
-.\.venv\Scripts\python .\app\pc_hand_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --flip --backend any
+.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --flip --backend msmf
+.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --flip --backend any
 ```
