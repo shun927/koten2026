@@ -1,4 +1,4 @@
-"""
+r"""
 pc_sender直下
 ..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --backend msmf --flip --aruco-corner-ids 0,1,2,3
 """
@@ -295,4 +295,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -3,22 +3,22 @@
 このリポジトリは、PC + Webカメラで手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
 
 - 旧：人差し指先端の相対3D（`docs/requirements_message_format.md`）
-- 推奨：箱の正面平面（ArUcoで0..1へ写像、両手21点、`docs/requirements_message_format_box_plane.md`）
+- 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z、両手21点、`docs/requirements_message_format_box_plane.md`）
 
 ## 作品システム（案）
-- PC：Webカメラ入力＋手推論（人差し指先端の相対3D）を生成してtouchへ送信
+- PC：Webカメラ入力＋手推論（箱疑似3D: 両手21点）を生成してtouchへ送信
 - TouchDesigner：受信した座標を統合・正規化・平滑化して、Unityとsoundへ配信
 - Unity：ビジュアル
 - sound：音
 - Blender：オブジェクト制作（Unityへ取り込み）
 
 通信（推奨）
-- PC → touch：UDP（JSON。`docs/requirements_message_format.md` の形式）
+- PC → touch：UDP（JSON。`docs/requirements_message_format_box_plane.md` の形式）
 - touch → Unity / sound：OSC（UDP）
 
 安定化の要点（重要）
-- 座標処理の正本はtouchに寄せる（送信側PCは「生の相対3D＋`valid`＋`seq`＋`t_ms`」を送るだけ）
-- ロスト時挙動をtouchで統一（例：`valid=false` が一定時間続いたらホールド→フェード→無効）
+- 座標処理の正本はtouchに寄せる（送信側PCは「箱平面ランドマーク＋`seq`＋`t_ms`」を送る）
+- ロスト時挙動をtouchで統一（例：`aruco.ok=false` が続いたらホールド→フェード→無効）
 - OSCの仕様（アドレス/引数順）を先に固定して、Unityとsoundで同じ前提にする
  - 例: `/box/finger/left` と `/box/finger/right` に `x y z valid` を送る
 
@@ -78,6 +78,8 @@ koten2026/
     requirements_raspberrypi.md
     requirements_network_pc_direct.md
     requirements_message_format.md
+    requirements_message_format_box_plane.md
+    requirements_unity.md
     requirements_touch.md
   pc_sender/
     README.md

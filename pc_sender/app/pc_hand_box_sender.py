@@ -1,11 +1,11 @@
-"""
+r"""
 pc_hand_box_sender.py
 
 箱の正面(1枚の平面)を正面カメラで撮影し、ArUcoで箱の平面を推定して、
-MediaPipe Hand Landmarker の21ランドマークを「箱平面(0..1)」へ写像し、UDP(JSON)で送信します。
+MediaPipe Hand Landmarker の21ランドマークを「箱疑似3D(x,yは箱平面0..1、zは疑似深度)」としてUDP(JSON)で送信します。
 
 想定用途：
-- Unityで「箱を正面から見たCG映像」を描画し、左右の手CGを平面上で動かす(奥行きは一旦使わない)
+- Unityで「箱を正面から見たCG映像」を描画し、左右の手CGを疑似3Dで動かす
 
 起動例(PowerShell / pc_sender 直下で実行）：
   ..\.\.venv\Scripts\python .\app\pc_hand_box_sender.py `
@@ -206,6 +206,34 @@ def _ema(prev: np.ndarray | None, cur: np.ndarray, alpha: float) -> np.ndarray:
     return (a * cur + (1.0 - a) * prev).astype(np.float32)
 
 
+def _safe_norm(v: np.ndarray) -> float:
+    return float(np.linalg.norm(v))
+
+
+def _compute_z_like(hand_landmarks, hand_world_landmarks) -> np.ndarray:
+    """
+    Compute pseudo depth per landmark as a relative, scale-normalized value.
+    Positive z_like means "toward camera" by default.
+    """
+    if hand_world_landmarks:
+        w = np.array([[lm.x, lm.y, lm.z] for lm in hand_world_landmarks], dtype=np.float32)  # (21,3)
+        wrist_z = float(w[0, 2])
+        scale = _safe_norm(w[5] - w[17])
+        if scale < 1e-6:
+            scale = 1.0
+        z_like = -(w[:, 2] - wrist_z) / scale
+        return z_like.astype(np.float32)
+
+    # Fallback: image-landmark z with 2D hand-size normalization.
+    p = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks], dtype=np.float32)  # (21,3)
+    wrist_z = float(p[0, 2])
+    scale2d = _safe_norm(p[5, :2] - p[17, :2])
+    if scale2d < 1e-6:
+        scale2d = 1.0
+    z_like = -(p[:, 2] - wrist_z) / scale2d
+    return z_like.astype(np.float32)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to endpoint.json")
@@ -247,6 +275,36 @@ def main() -> int:
         default=0.35,
         help="EMA smoothing for box landmarks (0..1). 1 disables smoothing.",
     )
+    parser.add_argument(
+        "--z-smooth-alpha",
+        type=float,
+        default=0.35,
+        help="EMA smoothing for pseudo depth z_like (0..1). 1 disables smoothing.",
+    )
+    parser.add_argument(
+        "--z-like-scale",
+        type=float,
+        default=1.0,
+        help="Scale multiplier applied to z_like.",
+    )
+    parser.add_argument(
+        "--z-like-offset",
+        type=float,
+        default=0.0,
+        help="Offset added to z_like after scaling.",
+    )
+    parser.add_argument(
+        "--z-like-min",
+        type=float,
+        default=-1.0,
+        help="Lower clamp for z_like.",
+    )
+    parser.add_argument(
+        "--z-like-max",
+        type=float,
+        default=1.0,
+        help="Upper clamp for z_like.",
+    )
     args = parser.parse_args()
 
     endpoint = _read_endpoint(Path(args.config))
@@ -274,6 +332,7 @@ def main() -> int:
 
     # Smoothing state per hand "key"
     smoothed: dict[str, np.ndarray] = {}
+    smoothed_z: dict[str, np.ndarray] = {}
     last_h_img_to_box: np.ndarray | None = None
     last_h_t_ms: int | None = None
 
@@ -319,14 +378,33 @@ def main() -> int:
                 label, conf = _hand_label(handedness_list[hand_index] if hand_index < len(handedness_list) else [])
 
                 lm_img_px = np.array([[lm.x * w_img, lm.y * h_img] for lm in hand_landmarks], dtype=np.float32)
+                key = label if label != "Unknown" else f"hand{hand_index}"
+
+                z_raw = _compute_z_like(
+                    hand_landmarks,
+                    result.hand_world_landmarks[hand_index]
+                    if result.hand_world_landmarks and hand_index < len(result.hand_world_landmarks)
+                    else None,
+                )
+                z_adj = np.clip(
+                    z_raw * float(args.z_like_scale) + float(args.z_like_offset),
+                    float(args.z_like_min),
+                    float(args.z_like_max),
+                ).astype(np.float32)
+                z_prev = smoothed_z.get(key)
+                z_like = _ema(z_prev, z_adj, alpha=args.z_smooth_alpha)
+                smoothed_z[key] = z_like
+
                 lm_box = None
                 if h_img_to_box is not None:
                     lm_box = _warp_points(lm_img_px, h_img_to_box)
-
-                    key = label if label != "Unknown" else f"hand{hand_index}"
                     prev = smoothed.get(key)
                     lm_box = _ema(prev, lm_box, alpha=args.smooth_alpha)
                     smoothed[key] = lm_box
+
+                lm_box3 = None
+                if lm_box is not None:
+                    lm_box3 = np.concatenate([lm_box, z_like.reshape(-1, 1)], axis=1)
 
                 hands_out.append(
                     {
@@ -337,6 +415,12 @@ def main() -> int:
                         "lm_img": [[float(lm.x), float(lm.y)] for lm in hand_landmarks],
                         # When ArUco is visible: normalized box plane coords (0..1).
                         "lm_box": None if lm_box is None else [[float(x), float(y)] for x, y in lm_box.tolist()],
+                        # Pseudo 3D in box coordinates (x,y from lm_box, z from z_like).
+                        "lm_box3": None
+                        if lm_box3 is None
+                        else [[float(x), float(y), float(z)] for x, y, z in lm_box3.tolist()],
+                        # z_like is always available (even when ArUco is temporarily unavailable).
+                        "z_like": [float(z) for z in z_like.tolist()],
                         "valid": True,
                     }
                 )
@@ -357,6 +441,13 @@ def main() -> int:
                     "stale": bool(aruco_stale),
                     "age_ms": int(aruco_age_ms),
                     "hold_ms": int(args.aruco_hold_ms),
+                },
+                "z_like": {
+                    "scale": float(args.z_like_scale),
+                    "offset": float(args.z_like_offset),
+                    "min": float(args.z_like_min),
+                    "max": float(args.z_like_max),
+                    "smooth_alpha": float(args.z_smooth_alpha),
                 },
                 "hands": hands_out,
             }

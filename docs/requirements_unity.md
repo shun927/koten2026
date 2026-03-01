@@ -2,18 +2,7 @@
 
 このドキュメントは「箱の正面を正面から見たCG映像」に対して、箱の左右から入る両手の動きで手CGを動かすための要件まとめです。
 
-## 1. 推奨構成（2パターン）
-
-### A) Unityだけで完結（最短・シンプル）
-- Python（MediaPipe + ArUco）で手を推定し、UDP(JSON)でUnityへ送る
-- Unityが受信・左右判定・平滑化・ロスト処理・リグ駆動・描画を全部担当
-
-向くケース：
-- 映像が全部CG（実写合成が要らない）
-- 作品のロジックをUnityに寄せたい
-- 運用PCを少なくしたい
-
-### B) TouchDesignerを挟む（現場調整が強い）
+## 1. 構成
 - Python → TouchDesigner（UDP受信）
 - TouchDesignerで左右判定・平滑化・ロスト・デバッグ可視化・OSC変換
 - TouchDesigner → Unity（OSC等）
@@ -31,19 +20,19 @@
 - ArUcoが不安定なときは、touch側で「短時間ホールド→失効」や `lm_img` へのフォールバックを実装する（詳細は `docs/requirements_touch.md`）
 
 ### 2.1 TouchDesigner → Unity（OSC）の推奨入力
-手CGを動かすなら、21点（2D）を受け取れるようにする。
-- `/box/hand/left/lm2d`: 42 floats（x0,y0,...,x20,y20、0..1の箱平面）
-- `/box/hand/right/lm2d`: 42 floats（同上）
+手CGを動かすなら、21点（疑似3D）を受け取れるようにする。
+- `/box/hand/left/lm3d`: 63 floats（x0,y0,z0,...,x20,y20,z20）
+- `/box/hand/right/lm3d`: 63 floats（同上）
 - `/box/hand/left/valid`: int（0/1）
 - `/box/hand/right/valid`: int（0/1）
 
 最小（互換/試作）:
-- `/box/finger/left`: `x y z valid`（Box平面では `z=0`）
-- `/box/finger/right`: `x y z valid`（Box平面では `z=0`）
+- `/box/finger/left`: `x y z valid`（`z` は疑似深度）
+- `/box/finger/right`: `x y z valid`（`z` は疑似深度）
 
 ## 3. Unity側の要件（実装）
 
-### 3.1 OSC受信（推奨：TouchDesigner経由）
+### 3.1 OSC受信（TouchDesigner経由）
 - メインスレッドをブロックしない（別スレッド/非同期で受信）
 - 受信が途切れた場合に備えて、ロスト/失効をUnity側でも持てると安全
 
@@ -52,7 +41,7 @@
 
 ### 3.2 左右の手の割り当て（両手必須）
 推奨（入口位置で固定）：
-- 入力が21点（`lm2d`）のとき、手首（index 0）の `x` が `0.5` 未満を左、以上を右
+- 入力が21点（`lm3d`）のとき、手首（index 0）の `x` が `0.5` 未満を左、以上を右
 - `hand`（Left/Right）は補助（遮蔽時に入れ替わる可能性がある）
 
 ### 3.3 ロスト/失効
@@ -62,6 +51,7 @@
 ### 3.4 平滑化
 - 入力点（21点）にEMAを掛けるか、関節角にEMAを掛ける
 - 目安：`alpha=0.2〜0.5` から調整（滑らかさと遅延のトレードオフ）
+- `z` はノイズが目立ちやすいので、`x,y` より強く平滑化する
 
 ### 3.5 ボーン駆動（指）
 最低要件：

@@ -14,7 +14,7 @@
 - メッセージ仕様: `docs/requirements_message_format_box_plane.md`（`v=2 kind=box_plane`）
 - 利用フィールド（主要）:
   - `t_ms`, `seq`, `aruco.ok`, `aruco.stale`, `aruco.age_ms`
-  - `hands[].valid`, `hands[].lm_box`, `hands[].lm_img`
+  - `hands[].valid`, `hands[].lm_box`, `hands[].lm_box3`, `hands[].z_like`, `hands[].lm_img`
 
 ### 2.2 旧仕様（参考）：指先相対3Dモード
 既存資産との互換のために残します。新規はBox平面モードを推奨。
@@ -23,7 +23,7 @@
   - `t_ms`, `seq`, `valid`, `tip_img`, `tip_norm`
 
 ## 3. 左右判定（X位置ベース）
-作品の正面と左右穴が固定である前提で、左右は `tip_img.x` で決める。
+作品の正面と左右穴が固定である前提で、左右は「手首のX位置」で決める。
 
 ### 3.1 Box平面（推奨）
 `hands[].lm_box` があるときは、手首（landmark 0）の `x` で左右を固定する。
@@ -49,7 +49,7 @@
 
 ## 4. 作品座標への変換（box座標）
 ### 4.1 Box平面（推奨）
-- 入力は `hands[].lm_box`（0..1）を使用（ArUcoで箱の正面平面に写像済み）
+- 入力は `hands[].lm_box3`（`x,y,z_like`）を使用（ArUco + 疑似深度）
 - Unityで手CGを動かす用途なら、まずは次の2点から始めるのが簡単:
   - 手首: landmark `0`
   - 人差し指先: landmark `8`
@@ -68,6 +68,7 @@
 - 目安:
   - 反応重視: `0.6`
   - 安定重視: `0.85`
+- `z_like` は `x,y` よりノイズが出やすいので、`z` だけ強めの平滑化を推奨
 
 ## 6. ロスト処理（推奨）
 - `valid=false` またはメッセージ途絶が `150ms` 超でロスト開始
@@ -86,14 +87,14 @@ Box平面モード補足（ArUco一時隠れ）：
 UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で送る前提。
 
 ### 7.1 最小（指先だけ：互換重視）
-旧仕様と同じ形で出せるようにし、Box平面のときは `z=0` 固定で送る。
+旧仕様と同じ形で出せるようにし、疑似3Dでは `z=z_like` を送る。
 - 左穴: `/box/finger/left` に `x y z valid`（float,float,float,int）
 - 右穴: `/box/finger/right` に `x y z valid`（float,float,float,int）
 
 ### 7.2 推奨（手の21点：Unityで手CGを動かす）
-1メッセージで42個（x0,y0,...,x20,y20）を送る。
-- 左手: `/box/hand/left/lm2d` に 42 floats（0..1、箱平面）
-- 右手: `/box/hand/right/lm2d` に 42 floats（0..1、箱平面）
+1メッセージで63個（x0,y0,z0,...,x20,y20,z20）を送る。
+- 左手: `/box/hand/left/lm3d` に 63 floats（x,yは0..1箱平面、zは疑似深度）
+- 右手: `/box/hand/right/lm3d` に 63 floats（同上）
 - `valid` は別アドレスで送る（int）
   - `/box/hand/left/valid`
   - `/box/hand/right/valid`
@@ -107,7 +108,7 @@ UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で
 必要なら追加:
 - デバッグ用に `seq`（int）, `t_ms`（int）を別アドレスで送る
 
-### 7.1 2台運用（有線直結）の注意
+### 7.3 2台運用（有線直結）の注意
 直結で固定IP運用する場合は、OSC Out の宛先IPを「受信するPCの固定IP」に設定する。
 例：自分のPCが `192.168.10.2` の場合、TouchDesignerのOSC Outは `192.168.10.2` 宛て。
 
@@ -122,12 +123,12 @@ UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で
 1. `udp_in`（UDP In DAT）
 2. `json_parse`（Text DAT / DAT ExecuteでJSONパース）
 3. `route_hands`（Script DAT）
-4. left/right 用 CHOP へ値を反映（x,y,z,valid）
+4. left/right 用 CHOP へ値を反映（`lm3d[63]` + `valid`）
 
 ### 座標処理（left/right 共通）
-1. `*_in`（CHOP: x,y,z,valid）
-2. `*_math`（Math CHOP: scale/offset）
-3. `*_limit`（Limit CHOP: 0..1 clamp）
+1. `*_in`（CHOP: `lm3d[63]`, `valid`）
+2. `*_limit`（x,yは0..1 clamp、zは別レンジ clamp）
+3. `*_math`（必要に応じて scale/offset）
 4. `*_filter`（Filter CHOP: EMA相当）
 5. `*_logic`（Logic CHOP: validのしきい値処理）
 
