@@ -54,6 +54,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--model", help="Path to hand_landmarker.task")
     parser.add_argument("--max-hands", type=int, help="Max hands")
     parser.add_argument("--alpha", type=float, help="EMA alpha (0 disables)")
+    parser.add_argument(
+        "--min-hand-detection-confidence",
+        type=float,
+        help="MediaPipe: minimum hand detection confidence (0..1)",
+    )
+    parser.add_argument(
+        "--min-hand-presence-confidence",
+        type=float,
+        help="MediaPipe: minimum hand presence confidence (0..1)",
+    )
+    parser.add_argument(
+        "--min-tracking-confidence",
+        type=float,
+        help="MediaPipe: minimum tracking confidence (0..1)",
+    )
     parser.add_argument("--print-fps", action="store_true", help="Print sender FPS")
     return parser.parse_args()
 
@@ -131,6 +146,21 @@ def main() -> int:
     model_path = args.model or cfg.get("model_path") or "./hand_landmarker.task"
     max_hands = int(args.max_hands or cfg.get("max_hands") or 1)
     alpha = float(args.alpha if args.alpha is not None else cfg.get("alpha", 0.0))
+    min_hand_detection_confidence = float(
+        args.min_hand_detection_confidence
+        if args.min_hand_detection_confidence is not None
+        else cfg.get("min_hand_detection_confidence", 0.1)
+    )
+    min_hand_presence_confidence = float(
+        args.min_hand_presence_confidence
+        if args.min_hand_presence_confidence is not None
+        else cfg.get("min_hand_presence_confidence", 0.1)
+    )
+    min_tracking_confidence = float(
+        args.min_tracking_confidence
+        if args.min_tracking_confidence is not None
+        else cfg.get("min_tracking_confidence", 0.1)
+    )
 
     import mediapipe as mp  # type: ignore
     from mediapipe.tasks.python import BaseOptions  # type: ignore
@@ -150,6 +180,9 @@ def main() -> int:
         base_options=BaseOptions(model_asset_path=model_path),
         running_mode=RunningMode.VIDEO,
         num_hands=max_hands,
+        min_hand_detection_confidence=min_hand_detection_confidence,
+        min_hand_presence_confidence=min_hand_presence_confidence,
+        min_tracking_confidence=min_tracking_confidence,
     )
 
     seq = 0
@@ -164,107 +197,115 @@ def main() -> int:
                 if frame_rgb is None:
                     continue
 
-            frames += 1
-            now = time.time()
-            if args.print_fps and now - last_fps_print >= 2.0:
-                fps_now = frames / (now - last_fps_print)
-                print(f"FPS~ {fps_now:.1f}")
-                frames = 0
-                last_fps_print = now
+                # Some camera backends may return non-contiguous arrays; ensure a contiguous buffer for MediaPipe.
+                try:
+                    import numpy as np  # type: ignore
 
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-            # Use monotonic time for MediaPipe timestamps to avoid issues if wall clock jumps.
-            t_mp_ms = int(time.monotonic() * 1000)
-            t_ms = int(now * 1000)
+                    frame_rgb = np.ascontiguousarray(frame_rgb)
+                except Exception:
+                    pass
 
-            result = landmarker.detect_for_video(mp_image, t_mp_ms)
+                frames += 1
+                now = time.time()
+                if args.print_fps and now - last_fps_print >= 2.0:
+                    fps_now = frames / (now - last_fps_print)
+                    print(f"FPS~ {fps_now:.1f}")
+                    frames = 0
+                    last_fps_print = now
 
-            world = getattr(result, "hand_world_landmarks", None) or []
-            image_landmarks = getattr(result, "hand_landmarks", None) or []
-            handedness = getattr(result, "handedness", None) or []
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                # Use monotonic time for MediaPipe timestamps to avoid issues if wall clock jumps.
+                t_mp_ms = int(time.monotonic() * 1000)
+                t_ms = int(now * 1000)
 
-            # Send one message per detected hand (up to max_hands).
-            send_count = min(len(world), max_hands)
-            for hand_index in range(send_count):
-                msg = {
-                    "v": 1,
-                    "t_ms": t_ms,
-                    "seq": seq,
-                    "src": "pi",
-                    "hand_index": hand_index,
-                    "hand": "Unknown",
-                    "conf": 0.0,
-                    "tip_img": [0.0, 0.0],
-                    "tip_rel": [0.0, 0.0, 0.0],
-                    "tip_norm": [0.0, 0.0, 0.0],
-                    "scale": 0.0,
-                    "valid": False,
-                }
-                seq += 1
+                result = landmarker.detect_for_video(mp_image, t_mp_ms)
 
-                hw = world[hand_index]
-                wrist = Vec3(hw[0].x, hw[0].y, hw[0].z)
-                tip = Vec3(hw[8].x, hw[8].y, hw[8].z)
-                mcp5 = Vec3(hw[5].x, hw[5].y, hw[5].z)
-                mcp17 = Vec3(hw[17].x, hw[17].y, hw[17].z)
+                world = getattr(result, "hand_world_landmarks", None) or []
+                image_landmarks = getattr(result, "hand_landmarks", None) or []
+                handedness = getattr(result, "handedness", None) or []
 
-                tip_rel = tip - wrist
-                scale = _norm(mcp5 - mcp17)
-                if scale > 1e-6:
-                    tip_norm = tip_rel / scale
-                    if alpha and 0.0 < alpha < 1.0:
-                        prev = ema_by_hand_index.get(hand_index)
-                        if prev is None:
-                            ema_by_hand_index[hand_index] = tip_norm
+                # Send one message per detected hand (up to max_hands).
+                send_count = min(len(world), max_hands)
+                for hand_index in range(send_count):
+                    msg = {
+                        "v": 1,
+                        "t_ms": t_ms,
+                        "seq": seq,
+                        "src": "pi",
+                        "hand_index": hand_index,
+                        "hand": "Unknown",
+                        "conf": 0.0,
+                        "tip_img": [0.0, 0.0],
+                        "tip_rel": [0.0, 0.0, 0.0],
+                        "tip_norm": [0.0, 0.0, 0.0],
+                        "scale": 0.0,
+                        "valid": False,
+                    }
+                    seq += 1
+
+                    hw = world[hand_index]
+                    wrist = Vec3(hw[0].x, hw[0].y, hw[0].z)
+                    tip = Vec3(hw[8].x, hw[8].y, hw[8].z)
+                    mcp5 = Vec3(hw[5].x, hw[5].y, hw[5].z)
+                    mcp17 = Vec3(hw[17].x, hw[17].y, hw[17].z)
+
+                    tip_rel = tip - wrist
+                    scale = _norm(mcp5 - mcp17)
+                    if scale > 1e-6:
+                        tip_norm = tip_rel / scale
+                        if alpha and 0.0 < alpha < 1.0:
+                            prev = ema_by_hand_index.get(hand_index)
+                            if prev is None:
+                                ema_by_hand_index[hand_index] = tip_norm
+                            else:
+                                a = alpha
+                                ema_by_hand_index[hand_index] = Vec3(
+                                    a * prev.x + (1.0 - a) * tip_norm.x,
+                                    a * prev.y + (1.0 - a) * tip_norm.y,
+                                    a * prev.z + (1.0 - a) * tip_norm.z,
+                                )
+                            tip_norm_out = ema_by_hand_index[hand_index]
                         else:
-                            a = alpha
-                            ema_by_hand_index[hand_index] = Vec3(
-                                a * prev.x + (1.0 - a) * tip_norm.x,
-                                a * prev.y + (1.0 - a) * tip_norm.y,
-                                a * prev.z + (1.0 - a) * tip_norm.z,
-                            )
-                        tip_norm_out = ema_by_hand_index[hand_index]
-                    else:
-                        tip_norm_out = tip_norm
+                            tip_norm_out = tip_norm
 
-                    msg["tip_rel"] = tip_rel.to_list()
-                    msg["tip_norm"] = tip_norm_out.to_list()
-                    msg["scale"] = float(scale)
-                    msg["valid"] = True
+                        msg["tip_rel"] = tip_rel.to_list()
+                        msg["tip_norm"] = tip_norm_out.to_list()
+                        msg["scale"] = float(scale)
+                        msg["valid"] = True
 
-                # Normalized image-space tip position (0..1). Useful for left/right assignment in TouchDesigner.
-                if hand_index < len(image_landmarks):
-                    hl = image_landmarks[hand_index]
-                    msg["tip_img"] = [float(hl[8].x), float(hl[8].y)]
+                    # Normalized image-space tip position (0..1). Useful for left/right assignment in TouchDesigner.
+                    if hand_index < len(image_landmarks):
+                        hl = image_landmarks[hand_index]
+                        msg["tip_img"] = [float(hl[8].x), float(hl[8].y)]
 
-                if hand_index < len(handedness) and len(handedness[hand_index]) > 0:
-                    label = getattr(handedness[hand_index][0], "category_name", None)
-                    if isinstance(label, str) and label:
-                        msg["hand"] = label
-                    score = getattr(handedness[hand_index][0], "score", None)
-                    if isinstance(score, (int, float)):
-                        msg["conf"] = float(score)
+                    if hand_index < len(handedness) and len(handedness[hand_index]) > 0:
+                        label = getattr(handedness[hand_index][0], "category_name", None)
+                        if isinstance(label, str) and label:
+                            msg["hand"] = label
+                        score = getattr(handedness[hand_index][0], "score", None)
+                        if isinstance(score, (int, float)):
+                            msg["conf"] = float(score)
 
-                sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
+                    sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
 
-            # If no hands detected, still send a heartbeat message so the receiver can time out cleanly.
-            if send_count == 0:
-                msg = {
-                    "v": 1,
-                    "t_ms": t_ms,
-                    "seq": seq,
-                    "src": "pi",
-                    "hand_index": -1,
-                    "hand": "Unknown",
-                    "conf": 0.0,
-                    "tip_img": [0.0, 0.0],
-                    "tip_rel": [0.0, 0.0, 0.0],
-                    "tip_norm": [0.0, 0.0, 0.0],
-                    "scale": 0.0,
-                    "valid": False,
-                }
-                seq += 1
-                sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
+                # If no hands detected, still send a heartbeat message so the receiver can time out cleanly.
+                if send_count == 0:
+                    msg = {
+                        "v": 1,
+                        "t_ms": t_ms,
+                        "seq": seq,
+                        "src": "pi",
+                        "hand_index": -1,
+                        "hand": "Unknown",
+                        "conf": 0.0,
+                        "tip_img": [0.0, 0.0],
+                        "tip_rel": [0.0, 0.0, 0.0],
+                        "tip_norm": [0.0, 0.0, 0.0],
+                        "scale": 0.0,
+                        "valid": False,
+                    }
+                    seq += 1
+                    sock.sendto(json.dumps(msg, ensure_ascii=False).encode("utf-8"), dest)
 
         finally:
             source.close()

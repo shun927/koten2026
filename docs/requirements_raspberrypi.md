@@ -65,7 +65,7 @@
 ## 9. Raspberry Pi セットアップ手順（推奨）
 
 ### 9.1 OSセットアップ
-- Raspberry Pi OS 64-bit（Bookworm系）を推奨
+- Raspberry Pi OS 64-bit（Bookworm系）
 - 初回起動時に設定：
   - `SSH` を有効化（後でPCから操作できるように）
   - 有線LAN推奨（Wi‑Fiでも可）
@@ -83,8 +83,19 @@ sudo reboot
 #### Pi Camera（推奨）
 Pi Cameraを使う場合：
 ```bash
-sudo apt -y install libcamera-apps
-libcamera-hello
+sudo apt -y install rpicam-apps
+rpicam-hello
+```
+
+補足：
+- `rpicam-hello` はデフォルトだと短時間で終了します
+- ずっと表示して確認したい場合は `-t 0` を付ける：
+```bash
+rpicam-hello -t 0
+```
+- 箱内運用に近い低負荷の確認例：
+```bash
+rpicam-hello -t 0 --width 640 --height 480 --framerate 30
 ```
 
 #### USBカメラ
@@ -184,13 +195,13 @@ ls -lh /home/pi/koten2026/hand_landmarker.task
 Camera Module V2は `libcamera` 系で扱うのが基本です。
 
 要件：
-- Pi側で `libcamera-hello` が動くこと
+- Pi側で `rpicam-hello`（旧: `libcamera-hello`）が動くこと
 - Pythonからは `picamera2` を使うのが安定（OpenCVの `VideoCapture(0)` だけで読めない環境がある）
 
 インストール（Pi上）：
 ```bash
-sudo apt -y install libcamera-apps python3-picamera2
-libcamera-hello
+sudo apt -y install rpicam-apps python3-picamera2
+rpicam-hello
 ```
 
 実装側の想定：
@@ -255,7 +266,65 @@ IPを固定にする（例：`192.168.10.2/24`）。
 - `Could not resolve hostname`：ホスト名解決できていない。IP直指定で接続する
 - `Permission denied`：ユーザー名が違う可能性が高い（Imager設定のユーザー名を使う）
 
-## 15. Piへのプロジェクト配置（PCで実行）
+### 14.4 VS Code（Remote-SSH）でPi上を直接編集（推奨）
+この方式は「PCからPiへコピー（`scp`）して反映」を繰り返すのではなく、**Pi上の `/home/<USER>/koten2026` を直接開いて編集**します。
+
+#### 前提
+- PC：Windows + VS Code
+- Pi：SSH有効、直結固定IP（例：`192.168.10.2`）またはホスト名（例：`pi4-01`）
+- Pi側プロジェクト配置先：`/home/<USER>/koten2026`
+
+#### VS Code セットアップ
+- 拡張：`Remote - SSH`（`ms-vscode-remote.remote-ssh`）をインストール
+
+#### 接続
+VS Codeで：
+- `Ctrl+Shift+P` → `Remote-SSH: Connect to Host...`
+- 接続先：`<USER>@192.168.10.2`（または `<USER>@pi4-01`）
+
+初回はホストキー確認が出るので、意図したPiなら `yes`。
+接続できると VS Code 左下に `SSH: ...` が表示されます。
+
+#### フォルダを開く
+- `Ctrl+Shift+P` → `Remote-SSH: Open Folder...` → `/home/<USER>/koten2026`
+- フォルダが無い場合（Pi側ターミナルで）：
+```bash
+mkdir -p ~/koten2026
+```
+
+#### Remote-SSH での実行（このタイプの実行方法）
+VS Code のターミナルが **Pi上** になっていることを確認（`pwd` が `/home/<USER>/...`）。
+
+Pi側（Remote-SSHターミナル）：
+```bash
+cd /home/<USER>/koten2026
+cp -n config/endpoint.example.json config/endpoint.json
+./.venv/bin/python app/pi_hand_sender.py --config config/endpoint.json --model ./hand_landmarker.task --print-fps
+```
+
+PC側受信（PC上の別ターミナル）：
+```powershell
+python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005
+```
+
+#### systemd運用している場合の反映
+コード/設定を編集したら（Pi側で）：
+```bash
+sudo systemctl restart koten2026
+```
+unitファイルを触った場合は：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart koten2026
+```
+状態確認：
+```bash
+systemctl status koten2026 --no-pager
+journalctl -u koten2026 -f
+```
+
+## 15. Piへのプロジェクト配置（初回 / PCで実行）
+Remote-SSH で編集する場合でも、最初にPiの `/home/<USER>/koten2026` にプロジェクトを配置する必要があります（初回のみ）。
 PowerShell例（`<USER>` はPiのユーザー名）：
 ```powershell
 ssh <USER>@192.168.10.2 "mkdir -p /home/<USER>/koten2026"
@@ -271,8 +340,8 @@ sudo apt -y upgrade
 
 ### 16.2 カメラ関連
 ```bash
-sudo apt -y install libcamera-apps python3-picamera2
-libcamera-hello
+sudo apt -y install rpicam-apps python3-picamera2
+rpicam-hello
 ```
 
 ### 16.3 `uv` 導入
@@ -291,7 +360,7 @@ uv pip install -r requirements.txt
 ```
 
 ## 17. モデル配置と起動確認
-### 17.1 モデル配置（PCで実行）
+### 17.1 モデル配置（初回 / PCで実行）
 ```powershell
 scp .\hand_landmarker.task <USER>@192.168.10.2:/home/<USER>/koten2026/
 ```
@@ -316,5 +385,8 @@ cp config/endpoint.example.json config/endpoint.json
 
 ## 18. トラブルシュート
 - 受信できない：WindowsファイアウォールでUDP `5005` を許可
-- カメラが映らない：`libcamera-hello` が動くか確認
+- Remote-SSHで編集したのに反映されない：VS Code 左下が `SSH: ...` になっているか、開いているパスが `/home/<USER>/koten2026` か確認
+- 接続先が意図したPiか不安：Pi側ターミナルで `hostname` と `ip a show eth0` を確認
+- `ping` が片方向に通らない：WindowsはICMP（ping）応答をブロックする設定がある。UDP疎通（受信ログ）が本命
+- カメラが映らない：`rpicam-hello`（旧: `libcamera-hello`）が動くか確認
 - `mediapipe` が入らない：Python 3.11/3.12のvenvで再実行
