@@ -15,8 +15,8 @@
 
 - Viewer確認：RealSense ViewerでColorが映ること、USBが `3.x` 表示であること
 - スモークテスト：`pc_sender/run_realsense_smoke_test.ps1`（venvとパスを自動で解決）
-- ArUco/手検出確認：`pc_sender/app/pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
-- 送信確認：`pc_sender/app/pc_hand_box_sender.py --source realsense --rs-fps 30 --config pc_sender/config/endpoint.json --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
+- ArUco/手検出確認：`python pc_sender/app/pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
+- 送信確認：`python pc_sender/app/pc_hand_box_sender.py --source realsense --rs-fps 30 --config pc_sender/config/endpoint.json --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 - 固定値コマンド集（本番用）：`docs/runbook_d435i_commands.md`
 
 ## 1. 計測フェーズ（送信PCのみ）
@@ -34,8 +34,18 @@
 ## 2. 通信フェーズ（送信PC → TouchDesigner）
 目的：UDP受信の安定化とロスト処理の骨格を固める。
 
-- 起動（送信）：`pc_sender/app/pc_hand_box_sender.py`
-- TouchDesigner側は `seq` が増え続けること、ロスト時の扱いが想定通りかを確認する
+- 受信側（TouchDesigner PC）の前提：
+  - 固定IP/直結の前提は `docs/requirements_network_pc_direct.md` を参照
+  - Windowsファイアウォールで UDP `5005` を許可（ネットワークプロファイル `Private` 推奨）
+- 受信のスモークテスト（TouchDesigner PC 側で実行）：まずは TouchDesigner を開く前に `pc_receiver` で受信できるかを確認する
+  - `python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty`
+- 送信側（送信PC）の前提：
+  - `pc_sender/config/endpoint.json` の `host` が TouchDesigner PC のIP（例：`192.168.10.2`）になっていること
+  - 起動（送信）：`python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
+- 合格の目安（受信側で確認）：
+  - `seq` が増え続ける（途切れ/停止しない）
+  - 大きな `seq jump` が常発しない（Wi-Fiではなく直結で改善しやすい）
+  - `aruco.ok=false` や `hands: []` でも「通信」自体の確認はできる（まずは UDP 5005 が届くことが重要）
 
 ## 3. OSCフェーズ（TouchDesigner → Unity）
 目的：Unity側は受信と可視化だけ先に完成させる（手リグはまだ）。

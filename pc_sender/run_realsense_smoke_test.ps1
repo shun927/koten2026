@@ -23,15 +23,16 @@ function Find-VenvPython {
     $candidates += (Join-Path $env:VIRTUAL_ENV "Scripts\\python.exe")
   }
 
-  $candidates += (Join-Path $RepoRoot ".venv-1\\Scripts\\python.exe")
   $candidates += (Join-Path $RepoRoot ".venv\\Scripts\\python.exe")
   $candidates += (Join-Path $PcSenderDir ".venv\\Scripts\\python.exe")
+  # Backward-compat: some environments may have been created as ".venv-1".
+  $candidates += (Join-Path $RepoRoot ".venv-1\\Scripts\\python.exe")
 
   foreach ($p in $candidates) {
     if (Test-Path $p) { return $p }
   }
 
-  throw "No venv python found. Create/activate venv, or install one at $RepoRoot\\.venv-1 or $RepoRoot\\.venv."
+  throw "No venv python found. Create/activate venv, or install one at $RepoRoot\\.venv."
 }
 
 $pcSenderDir = Split-Path -Parent $MyInvocation.MyCommand.Path

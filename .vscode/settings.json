@@ -1,0 +1,16 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.terminal.activateEnvironment": true,
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell (koten2026)": {
+      "source": "PowerShell",
+      "args": [
+        "-NoExit",
+        "-Command",
+        ". \"${workspaceFolder}\\.venv\\Scripts\\Activate.ps1\""
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "PowerShell (koten2026)"
+}
