@@ -7,7 +7,7 @@
 このリポジトリでは、以下の分担をおすすめとします（2台運用）：
 
 - 台の下PC（作品専用）：
-  - Webカメラ
+  - Intel RealSense D435i（推奨）
   - `pc_sender`（推論→UDP/JSONでTouchDesigner PCへ送信）
 - 自分のPC（統合）：
   - TouchDesigner（UDP受信→座標処理→OSC送信）

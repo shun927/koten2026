@@ -1,12 +1,12 @@
 # koten2026
 
-このリポジトリは、PC + Webカメラで手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
+このリポジトリは、PC + **Intel RealSense D435i（推奨）** で手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
 
 - 旧：人差し指先端の相対3D（`docs/requirements_message_format.md`）
 - 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z、両手21点、`docs/requirements_message_format_box_plane.md`）
 
 ## 作品システム（案）
-- PC：Webカメラ入力＋手推論（箱疑似3D: 両手21点）を生成してtouchへ送信
+- PC：RealSense D435i入力＋手推論（箱疑似3D: 両手21点）を生成してtouchへ送信
 - TouchDesigner：受信した座標を統合・正規化・平滑化して、Unityとsoundへ配信
 - Unity：ビジュアル
 - sound：音
@@ -27,7 +27,8 @@
 - 穴は左右側面。手が重ならないように離す/仕切りを入れると安定
 - 座標はまず `0..1` の正規化で統一（箱サイズは後から掛け算で対応）
 - 両手を使うなら送信側は `max_hands=2`、touch側でX位置ベースで左右を決める
-- box: 縦20㎝横50㎝高さ20㎝想定
+- box: 縦30㎝横50㎝高さ20㎝想定
+- マーカー4cm以上
 
 ## Unityでの運用（TouchDesignerを統合ハブにする）
 映像が全部CGで、奥行き無し（箱の正面平面）なら、次の構成を推奨します。
@@ -41,6 +42,7 @@
 - Unity要件：`docs/requirements_unity.md`
 - TouchDesigner要件：`docs/requirements_touch.md`
 - メッセージ仕様（箱平面）：`docs/requirements_message_format_box_plane.md`
+- 開発手順：`docs/development_workflow.md`
 
 ## 体験の流れ（案）
 1. 体験者がboxの側面穴から指（人差し指をさした状態）を差し入れる
@@ -55,7 +57,7 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 - `docs/considerations.md`（本番運用と作品内容の検討事項）
 
 ## 送信側（カメラ＋推論＋UDP）実装について
-送信側コードは `pc_sender/` にあります（PC + Webカメラ）。
+送信側コードは `pc_sender/` にあります（PC + RealSense D435i）。
 `docs/requirements_raspberrypi.md` は過去案（参考）として残しています。
 
 ## クイックスタート（PC送信 → touch受信）
@@ -64,6 +66,20 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 2. 送信PCで `pc_sender/README.md` の手順に従って起動（`venv` / `uv` どちらでもOK。2台運用なら `pc_sender/config/endpoint.json` の `host` をTouchDesigner PCのIPにする）
 3. デバッグ受信する場合は次を実行（任意）:
    - `python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty`
+
+## D435i最短チェック（推奨）
+送信系に入る前に、次の順でD435iの疎通を確認します。
+
+1. RealSense ViewerでColorが映ることを確認（USB表示が `3.x` であること）
+2. スモークテストを実行してColor/Depthの取得確認
+   - `.\.venv\Scripts\python .\pc_sender\app\pc_realsense_smoke_test.py --serial <D435I_SERIAL> --preview --spatial --temporal --hole-filling --center-window 9`
+3. `pc_hand_box_debug_viewer.py` でArUcoと手検出を確認
+   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
+4. `pc_hand_box_sender.py` でUDP送信を開始
+   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
+
+固定値でそのまま使うコマンド集：
+- `docs/runbook_d435i_commands.md`
 
 注意：
 - Windowsのファイアウォールで UDP `5005` を許可してください（受信側PC / touch側PC）。
@@ -97,7 +113,7 @@ koten2026/
 
 ## 用意するもの（ハード）
 - PC（Windows想定）
-- Webカメラ（USB想定）
+- Intel RealSense D435i（推奨。USB3）
 
 ## 用意するもの（ファイル）
 - `pc_sender/models/hand_landmarker.task`（MediaPipe Tasks公式配布のHand Landmarkerモデルを入手して配置）

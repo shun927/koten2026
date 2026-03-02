@@ -1,6 +1,6 @@
 r"""
 pc_sender直下
-..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --model .\models\hand_landmarker.task --camera 0 --backend msmf --flip --aruco-corner-ids 0,1,2,3
+..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --model .\models\hand_landmarker.task --width 1280 --height 720 --aruco-dict DICT_4X4_50 --aruco-corner-ids 0,1,2,3
 """
 import argparse
 import time
@@ -12,6 +12,43 @@ import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+
+
+class _RsCapture:
+    def __init__(self, *, serial: str, width: int, height: int, fps: int):
+        try:
+            import pyrealsense2 as rs  # type: ignore
+
+            self._rs = rs
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                "pyrealsense2 import failed. Install Intel RealSense SDK 2.0 and `pip install pyrealsense2`."
+            ) from e
+
+        self.serial = serial
+        self._pipeline = self._rs.pipeline()
+        config = self._rs.config()
+        if serial:
+            config.enable_device(serial)
+        config.enable_stream(self._rs.stream.color, int(width), int(height), self._rs.format.bgr8, int(fps))
+        self._profile = self._pipeline.start(config)
+
+    def read(self):
+        try:
+            frames = self._pipeline.wait_for_frames(timeout_ms=5000)
+            color = frames.get_color_frame()
+            if not color:
+                return False, None
+            frame_bgr = np.asanyarray(color.get_data())
+            return True, frame_bgr
+        except Exception:  # noqa: BLE001
+            return False, None
+
+    def release(self) -> None:
+        try:
+            self._pipeline.stop()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _now_ms() -> int:
@@ -62,6 +99,20 @@ def _open_camera(camera_index: int, backend: str):
     if last_err is not None:
         raise RuntimeError(f"Failed to open camera {camera_index} (backend={backend}): {last_err}")
     raise RuntimeError(f"Failed to open camera {camera_index} (backend={backend})")
+
+
+def _open_capture(args):
+    if args.source == "realsense":
+        cap = _RsCapture(serial=str(args.rs_serial or ""), width=int(args.width), height=int(args.height), fps=int(args.rs_fps))
+        opened_api = -1
+        cam_label = f"realsense(serial={args.rs_serial})" if args.rs_serial else "realsense"
+        return cap, opened_api, cam_label
+
+    cap, opened_api = _open_camera(int(args.camera), str(args.backend))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(args.width))
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(args.height))
+    cam_label = f"opencv(index={args.camera})"
+    return cap, opened_api, cam_label
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -149,7 +200,14 @@ def _draw_landmarks_on_plane(plane_bgr: np.ndarray, lm_box: np.ndarray, color: t
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help="Path to hand_landmarker.task")
-    parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index")
+    parser.add_argument(
+        "--source",
+        type=str,
+        default="realsense",
+        choices=["opencv", "realsense"],
+        help="Frame source. Use `realsense` to capture from Intel RealSense (D435i etc.).",
+    )
+    parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index (used when --source opencv)")
     parser.add_argument(
         "--backend",
         type=str,
@@ -159,6 +217,8 @@ def main() -> int:
     )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--rs-serial", type=str, default="", help="RealSense device serial (recommended)")
+    parser.add_argument("--rs-fps", type=int, default=30, help="RealSense color FPS")
     parser.add_argument("--max-hands", type=int, default=2)
     parser.add_argument("--flip", action="store_true", help="Mirror horizontally for easy checking")
     parser.add_argument("--viewer-size", type=int, default=720, help="Box plane canvas size (square)")
@@ -190,9 +250,7 @@ def main() -> int:
     if len(corner_ids) != 4:
         raise ValueError("--aruco-corner-ids must have 4 comma-separated ints (TL,TR,BR,BL)")
 
-    cap, opened_api = _open_camera(args.camera, args.backend)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+    cap, opened_api, cam_label = _open_capture(args)
 
     landmarker = _build_landmarker(model_path, num_hands=args.max_hands)
     dictionary = _aruco_dict(args.aruco_dict)
@@ -272,7 +330,7 @@ def main() -> int:
 
             cv2.putText(
                 vis,
-                f"cam={args.camera} api={opened_api} aruco_ok={aruco_ok} stale={aruco_stale} age_ms={aruco_age_ms}",
+                f"{cam_label} api={opened_api} aruco_ok={aruco_ok} stale={aruco_stale} age_ms={aruco_age_ms}",
                 (10, 24),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,

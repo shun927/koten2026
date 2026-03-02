@@ -18,7 +18,7 @@
 本番の安定性を優先し、まずは2台運用で成立するかを確認し、負荷や運用要件で必要なら3台運用へ拡張する。
 
 ### A) 2台運用（最小構成）
-- 台下PC（作品専用）：`pc_sender` + Webカメラ（Python処理のみ）
+- 台下PC（作品専用）：`pc_sender` + RealSense D435i（Python処理のみ）
 - 自分PC（統合）：TouchDesigner（UDP受信→座標処理→OSC送信） + Unity + sound（OSC受信）
 
 通信：
@@ -39,7 +39,7 @@
 - 構成を増やしたくない（本番の事故要因を減らす）
 
 ### B) 3台運用（負荷分散構成）
-- 台下PC（作品専用）：`pc_sender` + Webカメラ（Python処理のみ）
+- 台下PC（作品専用）：`pc_sender` + RealSense D435i（Python処理のみ）
 - 自分PC（TouchDesigner）：TouchDesigner（統合ハブ）
 - Unity/sound PC（出力）：Unity + sound（OSC受信、演出出力）
 
@@ -84,7 +84,7 @@
 - FPS、`valid`率、`seq` の監視ログを確認
 
 ## 4. リスクと対策
-- 黒画面: カメラインデックス/バックエンド切替、プライバシー設定確認
+- 黒画面: RealSense ViewerでColor確認、USB3直挿し、`--rs-serial`固定で起動
 - カメラ占有: Zoom/Teams/ブラウザを終了
 - 長時間運用: 自動起動設定（タスクスケジューラ）と再起動手順を用意
 - 誤操作: 本番時はTouchDesigner PC以外で開発作業しない
