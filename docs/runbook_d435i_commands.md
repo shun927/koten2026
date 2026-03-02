@@ -3,7 +3,6 @@
 目的：当日の起動を迷わないように、実運用で使うコマンドを固定してまとめる。
 
 前提（このファイルの固定値）:
-- RealSense serial: `925622071620`
 - model: `pc_sender/models/hand_landmarker.task`
 - sender config: `pc_sender/config/endpoint.json`
 - 実行場所: リポジトリルート `koten2026/`
@@ -17,17 +16,17 @@ Test-Path .\pc_sender\config\endpoint.json
 
 ## 1. D435i疎通確認（推奨）
 ```powershell
-python .\pc_sender\app\pc_realsense_smoke_test.py --serial 925622071620 --preview --spatial --temporal --hole-filling --center-window 9
+.\pc_sender\run_realsense_smoke_test.ps1
 ```
 
 ## 2. ArUco/手検出確認（送信PC）
 ```powershell
-python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-serial 925622071620 --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3
+python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3
 ```
 
 ## 3. UDP送信開始（送信PC）
 ```powershell
-python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-serial 925622071620 --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3
+python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3
 ```
 
 ## 4. UDP受信確認（touch側PC, 任意）
@@ -42,8 +41,8 @@ python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty
 4. `pc_hand_box_sender.py` の `seq` が増え続けるか
 
 ## 6. D435i以外を使う場合
-- serialだけ差し替える:
-  - `--rs-serial 925622071620` を対象機のserialに変更
+- RealSenseを複数台挿す場合:
+  - `--rs-serial <SERIAL>` を追加して対象機を固定する
 
 ## 7. `python` が見つからない/venvじゃない場合
 環境によって venv のフォルダ名が `.venv` ではないことがあるため、その場合は venv の `python.exe` をフルパスで指定して実行する。

@@ -84,7 +84,7 @@
 - FPS、`valid`率、`seq` の監視ログを確認
 
 ## 4. リスクと対策
-- 黒画面: RealSense ViewerでColor確認、USB3直挿し、`--rs-serial`固定で起動
+- 黒画面: RealSense ViewerでColor確認、USB3直挿し（複数台挿す場合だけ `--rs-serial` 指定）
 - カメラ占有: Zoom/Teams/ブラウザを終了
 - 長時間運用: 自動起動設定（タスクスケジューラ）と再起動手順を用意
 - 誤操作: 本番時はTouchDesigner PC以外で開発作業しない

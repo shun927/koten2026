@@ -1,6 +1,6 @@
 # koten2026
 
-このリポジトリは、PC + **Intel RealSense D435i（推奨）** で手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
+このリポジトリは、PC + **Intel RealSense D435i** で手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
 
 - 旧：人差し指先端の相対3D（`docs/requirements_message_format.md`）
 - 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z、両手21点、`docs/requirements_message_format_box_plane.md`）
@@ -27,7 +27,7 @@
 - 穴は左右側面。手が重ならないように離す/仕切りを入れると安定
 - 座標はまず `0..1` の正規化で統一（箱サイズは後から掛け算で対応）
 - 両手を使うなら送信側は `max_hands=2`、touch側でX位置ベースで左右を決める
-- box: 縦30㎝横50㎝高さ20㎝想定
+- box: 縦40㎝横50㎝高さ20㎝想定
 - マーカー4cm以上
 
 ## Unityでの運用（TouchDesignerを統合ハブにする）
@@ -72,11 +72,11 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 
 1. RealSense ViewerでColorが映ることを確認（USB表示が `3.x` であること）
 2. スモークテストを実行してColor/Depthの取得確認
-   - `.\.venv\Scripts\python .\pc_sender\app\pc_realsense_smoke_test.py --serial <D435I_SERIAL> --preview --spatial --temporal --hole-filling --center-window 9`
+   - `.\pc_sender\run_realsense_smoke_test.ps1`
 3. `pc_hand_box_debug_viewer.py` でArUcoと手検出を確認
-   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
+   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
 4. `pc_hand_box_sender.py` でUDP送信を開始
-   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
+   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 
 固定値でそのまま使うコマンド集：
 - `docs/runbook_d435i_commands.md`

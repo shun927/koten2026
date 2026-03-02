@@ -14,9 +14,9 @@
 目的：配線・SDK・カメラ取得の問題を先に潰す。
 
 - Viewer確認：RealSense ViewerでColorが映ること、USBが `3.x` 表示であること
-- スモークテスト：`pc_sender/app/pc_realsense_smoke_test.py --serial <D435I_SERIAL> --preview --spatial --temporal --hole-filling --center-window 9`
-- ArUco/手検出確認：`pc_sender/app/pc_hand_box_debug_viewer.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --model <MODEL_PATH> --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
-- 送信確認：`pc_sender/app/pc_hand_box_sender.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --config <ENDPOINT_JSON> --model <MODEL_PATH> --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
+- スモークテスト：`pc_sender/run_realsense_smoke_test.ps1`（venvとパスを自動で解決）
+- ArUco/手検出確認：`pc_sender/app/pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
+- 送信確認：`pc_sender/app/pc_hand_box_sender.py --source realsense --rs-fps 30 --config pc_sender/config/endpoint.json --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 - 固定値コマンド集（本番用）：`docs/runbook_d435i_commands.md`
 
 ## 1. 計測フェーズ（送信PCのみ）
@@ -28,7 +28,7 @@
   - `stale` が出ても短時間（例：数百ms）で戻る
 
 メモ：
-- マーカーは大きく、白フチを確保、照明は均一
+- マーカーは大きく、**白フチを確保**、照明は均一
 - 黒フェルト、黒布、艶消し塗装など
 
 ## 2. 通信フェーズ（送信PC → TouchDesigner）
