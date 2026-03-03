@@ -1,4 +1,4 @@
-# Raspberry Pi 実装要件（相対3D・座標送信）
+# Raspberry Pi 実装要件（相対3D・座標送信 / ARCHIVE）
 
 このドキュメントは「Raspberry Piで手を推論し、人差し指先端の相対3DをPCへ送る」ための設計要件です。
 

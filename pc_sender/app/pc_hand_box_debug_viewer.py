@@ -1,7 +1,3 @@
-r"""
-pc_sender直下
-..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\models\hand_landmarker.task --width 1280 --height 720 --aruco-dict DICT_4X4_50 --aruco-corner-ids 0,1,2,3
-"""
 import argparse
 import time
 from pathlib import Path
@@ -217,7 +213,12 @@ def main() -> int:
     )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
-    parser.add_argument("--rs-serial", type=str, default="", help="RealSense device serial (recommended)")
+    parser.add_argument(
+        "--rs-serial",
+        type=str,
+        default="",
+        help="RealSense device serial (optional; use only when multiple devices are connected)",
+    )
     parser.add_argument("--rs-fps", type=int, default=30, help="RealSense color FPS")
     parser.add_argument("--max-hands", type=int, default=2)
     parser.add_argument("--flip", action="store_true", help="Mirror horizontally for easy checking")

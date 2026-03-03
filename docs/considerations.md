@@ -77,6 +77,7 @@
 - TouchDesigner受信ポート `5005/UDP` の許可
 - OSC受信側ポートの許可
 - 開演前に `ping` と実UDP受信で疎通確認
+- 詳細手順：`docs/requirements_network_pc_direct.md`
 
 ## 3. 送信安定化
 - カメラ未取得時の自動再接続（実装済み）
@@ -95,9 +96,4 @@
 - 本番前にクリーンなvenvで再インストール確認
 
 ## 6. 開演前チェックリスト
-1. モデル配置 `pc_sender/models/hand_landmarker.task`
-2. `endpoint.json` のIP/ポート確認
-3. カメラプレビュー確認（`pc_sender/app/pc_hand_box_debug_viewer.py`）
-4. UDP受信確認（`pc_receiver/udp_receiver.py`）
-5. TouchDesigner左右判定/ロスト挙動確認
-6. Unity/soundのOSC受信確認
+現場用のチェックは `docs/runbook_site_checklist.md` に集約します。

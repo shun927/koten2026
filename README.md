@@ -6,18 +6,18 @@
 - 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z、両手21点、`docs/requirements_message_format_box_plane.md`）
 
 ## 作品システム（案）
-- PC：RealSense D435i入力＋手推論（箱疑似3D: 両手21点）を生成してtouchへ送信
+- 送信PC：RealSense D435i入力＋手推論（箱疑似3D: 両手21点）を生成してtouchへ送信
 - TouchDesigner：受信した座標を統合・正規化・平滑化して、Unityとsoundへ配信
 - Unity：ビジュアル
 - sound：音
 - Blender：オブジェクト制作（Unityへ取り込み）
 
 通信（推奨）
-- PC → touch：UDP（JSON。`docs/requirements_message_format_box_plane.md` の形式）
+- 送信PC → touch：UDP（JSON。`docs/requirements_message_format_box_plane.md` の形式）
 - touch → Unity / sound：OSC（UDP）
 
 安定化の要点（重要）
-- 座標処理の正本はtouchに寄せる（送信側PCは「箱平面ランドマーク＋`seq`＋`t_ms`」を送る）
+- 座標処理の正本はtouchに寄せる（送信側PCは「箱疑似3Dランドマーク＋`seq`＋`t_ms`」を送る）
 - ロスト時挙動をtouchで統一（例：`aruco.ok=false` が続いたらホールド→フェード→無効）
 - OSCの仕様（アドレス/引数順）を先に固定して、Unityとsoundで同じ前提にする
  - 例: `/box/finger/left` と `/box/finger/right` に `x y z valid` を送る
@@ -58,7 +58,7 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 
 ## 送信側（カメラ＋推論＋UDP）実装について
 送信側コードは `pc_sender/` にあります（PC + RealSense D435i）。
-`docs/requirements_raspberrypi.md` は過去案（参考）として残しています。
+`docs/archive/requirements_raspberrypi.md` は過去案（参考）として残しています。
 
 ## クイックスタート（PC送信 → touch受信）
 0. 2台直結する場合は `docs/requirements_network_pc_direct.md` を参照（固定IP）
@@ -67,6 +67,17 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 3. デバッグ受信する場合は次を実行（任意）:
    - `python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty`
 
+本番当日のチェック（1枚）は次を参照：
+- `docs/runbook_site_checklist.md`
+
+## コマンド表記（venvの統一）
+このリポジトリでは、**リポジトリ直下の `.venv` を activate してから `python ...` を実行**する表記に統一します。
+
+- `python ...`：いま有効なPython（通常は venv）で実行される（推奨）
+- `.\.venv\Scripts\python ...`：activate せずに venv を明示できる（切り分け用途）
+
+目安：PowerShellプロンプトに `(koten2026)` が出ていれば、`python` は venv を指しています。
+
 ## D435i最短チェック（推奨）
 送信系に入る前に、次の順でD435iの疎通を確認します。
 
@@ -74,15 +85,15 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 2. スモークテストを実行してColor/Depthの取得確認
    - `.\pc_sender\run_realsense_smoke_test.ps1`
 3. `pc_hand_box_debug_viewer.py` でArUcoと手検出を確認
-   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
+   - `python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
 4. `pc_hand_box_sender.py` でUDP送信を開始
-   - `.\.venv\Scripts\python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
+   - `python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 
 固定値でそのまま使うコマンド集：
 - `docs/runbook_d435i_commands.md`
 
 注意：
-- Windowsのファイアウォールで UDP `5005` を許可してください（受信側PC / touch側PC）。
+- Windowsのファイアウォールで UDP `5005` を許可してください（手順は `docs/requirements_network_pc_direct.md`）。
 
 ## ファイル構造
 ```text
@@ -91,12 +102,16 @@ koten2026/
   .gitignore
   docs/
     considerations.md
-    requirements_raspberrypi.md
+    development_workflow.md
+    runbook_site_checklist.md
+    runbook_d435i_commands.md
     requirements_network_pc_direct.md
     requirements_message_format.md
     requirements_message_format_box_plane.md
     requirements_unity.md
     requirements_touch.md
+    archive/
+      requirements_raspberrypi.md
   pc_sender/
     README.md
     requirements.txt
@@ -119,7 +134,37 @@ koten2026/
 - `pc_sender/models/hand_landmarker.task`（MediaPipe Tasks公式配布のHand Landmarkerモデルを入手して配置）
 - `pc_sender/config/endpoint.json`（`endpoint.example.json` をコピーして作る）
 
+```powershell
+Copy-Item .\pc_sender\config\endpoint.example.json .\pc_sender\config\endpoint.json
+```
+`config/endpoint.json` の `host`（TouchDesignerのIP）と `port` を環境に合わせて変更します。
+
 注意：`hand_landmarker.task` はリポジトリに含めず、各自でダウンロードして配置する運用です（`.gitignore` 済み）。
 
-## Python環境（推奨）
-- Python `3.12`（64bit）
+## 動作確認環境（目安）
+- Python：`3.12`（64bit推奨。`3.11` でも動くことが多い）
+- 主要パッケージ：`mediapipe==0.10.32` / `opencv-contrib-python==4.10.0.84` / `numpy==1.26.4`
+- `uv` のバージョン確認：`uv self version`（`uv version` は `pyproject.toml` が無いとエラー）
+
+## セットアップ（Windows / PowerShell想定）
+### venv（標準：リポジトリ直下の `.venv` に統一）
+```powershell
+cd <REPO_ROOT>
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+pip install -r .\pc_sender\requirements.txt
+```
+
+### uv（使いたい人向け）
+```powershell
+cd <REPO_ROOT>
+uv self version
+uv python install 3.12
+uv venv --python 3.12
+uv pip install -r .\pc_sender\requirements.txt
+```
+
+補足：
+- `uv python install 3.12` は未インストールなら入れます（既にあるなら省略可）。
+- 実行はリポジトリ直下の `.venv` を使います（`.\.venv\Scripts\Activate.ps1` 済みの前提で `python ...`）。

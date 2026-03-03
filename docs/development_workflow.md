@@ -4,6 +4,9 @@
 
 推奨：Unity側は「点群表示」→「手リグ」→「演出」の順で進める。
 
+本番当日のチェック（現場用）は次に集約：
+- `docs/runbook_site_checklist.md`
+
 ## 0. ゴール（合格条件の例）
 - `aruco_ok=true` が安定して維持できる（多少 `stale` が出ても復帰する）
 - TouchDesignerで左右割り当てが入れ替わらない

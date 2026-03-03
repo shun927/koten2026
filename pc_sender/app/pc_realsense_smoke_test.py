@@ -7,10 +7,9 @@ RealSense (recommended: D435i) smoke test:
 - Align depth to color
 - Show preview (optional) and print center depth distance
 
-Examples (PowerShell, from pc_sender/):
-  .\.venv\Scripts\python .\app\pc_realsense_smoke_test.py --preview
-  .\.venv\Scripts\python .\app\pc_realsense_smoke_test.py --serial <D435I_SERIAL> --width 640 --height 480 --fps 30 --preview
-  .\.venv\Scripts\python .\app\pc_realsense_smoke_test.py --duration-sec 10 --no-preview
+Examples (PowerShell, from repo root; venv activated):
+  python .\pc_sender\app\pc_realsense_smoke_test.py --preview
+  python .\pc_sender\app\pc_realsense_smoke_test.py --duration-sec 10 --no-preview
 
 Notes:
 - Requires Intel RealSense SDK 2.0 / librealsense and Python package `pyrealsense2`.
@@ -189,7 +188,12 @@ def _list_devices(rs) -> list[dict]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="RealSense (D435i recommended) smoke test")
-    parser.add_argument("--serial", type=str, default="", help="Use specific device serial number")
+    parser.add_argument(
+        "--serial",
+        type=str,
+        default="",
+        help="RealSense device serial (optional; use only when multiple devices are connected)",
+    )
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)

@@ -2,6 +2,9 @@
 
 目的：当日の起動を迷わないように、実運用で使うコマンドを固定してまとめる。
 
+現場チェック（1枚）：
+- `docs/runbook_site_checklist.md`
+
 前提（このファイルの固定値）:
 - model: `pc_sender/models/hand_landmarker.task`
 - sender config: `pc_sender/config/endpoint.json`

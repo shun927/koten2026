@@ -3,77 +3,6 @@
 このフォルダは、PCの **Intel RealSense D435i（推奨）** のColor映像から MediaPipe Hand Landmarker で手を推定し、箱の疑似3D（x,yは箱平面0..1、zは単眼の疑似深度）として両手21点をUDP(JSON)でTouchDesignerへ送信します。
 （OpenCVのWebカメラ入力も `--source opencv` で利用可能）
 
-## 作品システム（案）
-- 送信PC（台下）：RealSense D435i入力＋手推論（箱疑似3D: 両手21点）を生成してTouchDesigner PCへ送信
-- TouchDesigner：受信した座標を統合・正規化・平滑化して、Unityとsoundへ配信
-- Unity：ビジュアル
-- sound：音
-- Blender：オブジェクト制作（Unityへ取り込み）
-
-通信（推奨）
-- 送信PC → touch：UDP（JSON。`docs/requirements_message_format_box_plane.md` の形式）
-- touch → Unity / sound：OSC（UDP）
-
-安定化の要点（重要）
-- 座標処理の正本はtouchに寄せる（送信PCは「箱疑似3Dランドマーク＋`seq`＋`t_ms`」を送る）
-- ロスト時挙動をtouchで統一（例：`aruco.ok=false` が一定時間続いたらホールド→フェード→無効）
-- OSCの仕様（アドレス/引数順）を先に固定して、Unityとsoundで同じ前提にする
- - 例: `/box/finger/left` と `/box/finger/right` に `x y z valid` を送る
-
-## Box体験の前提（おすすめ）
-- カメラは「箱の正面中心」から正面向き（箱の正面平面にできるだけ垂直）に固定（ArUco平面推定が安定）
-- 穴は左右側面。手が重ならないように離す/仕切りを入れると安定
-- 座標はまず `0..1` の正規化で統一（箱サイズは後から掛け算で対応）
-- 両手を使うなら送信側は `max_hands=2`、touch側でX位置ベースで左右を決める
-
-## 体験の流れ（案）
-1. 体験者がboxの側面穴から指（人差し指をさした状態）を差し入れる
-2. box正面のカメラが箱の正面平面（ArUco）と手を撮影
-3. 送信PCが手ランドマークを推定し、箱平面（0..1）へ写像してtouchへUDP送信
-4. touchが左右割り当て/平滑化/ロスト処理を行い、UnityPCとsoundPCへOSC配信
-5. Unityが映像を更新、soundが音を更新
-
-## TouchDesigner実装手順（集約先）
-touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノード構成例はすべて次を参照:
-- `docs/requirements_touch.md`
-
-## 動作確認環境（目安）
-- Python：`3.12`（64bit推奨。`3.11` でも動くことが多い）
-- 主要パッケージ：`mediapipe==0.10.32` / `opencv-contrib-python==4.10.0.84` / `numpy==1.26.4`
-- `uv` のバージョン確認：`uv self version`（`uv version` は `pyproject.toml` が無いとエラー）
-
-## セットアップ（Windows / PowerShell想定）
-### venv（標準：リポジトリ直下の `.venv` に統一）
-```powershell
-cd <REPO_ROOT>
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-pip install -r .\pc_sender\requirements.txt
-```
-
-### uv（使いたい人向け）
-```powershell
-cd <REPO_ROOT>
-uv self version
-uv python install 3.12
-uv venv --python 3.12
-uv pip install -r .\pc_sender\requirements.txt
-```
-
-補足：
-- `uv python install 3.12` は未インストールなら入れます（既にあるなら省略可）。
-- 実行はリポジトリ直下の `.venv` を使います（例：`python ...` または `.\.venv\Scripts\python ...`）。
-
-## モデル配置
-MediaPipe Tasksの `hand_landmarker.task` を入手して、`pc_sender/models/hand_landmarker.task` に置きます（リポジトリには含めません）。
-
-## 設定
-```powershell
-Copy-Item .\pc_sender\config\endpoint.example.json .\pc_sender\config\endpoint.json
-```
-`config/endpoint.json` の `host`（TouchDesignerのIP）と `port` を環境に合わせて変更します。
-
 ## 実行（Box平面：推奨）
 ```powershell
 python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3
@@ -85,11 +14,6 @@ python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --co
 ### RealSense（D435iなど）をカメラ入力に使う
 Webカメラ（OpenCV）ではなく RealSense のColor映像を入力にしたい場合は `--source realsense` を使います。
 
-例（D435i、serial指定あり）：
-```powershell
-python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-serial 925622071620 --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3
-```
-
 補足：
 - RealSenseを複数台挿す場合だけ、`--rs-serial` を指定してください（取り違え防止）。
 - `--preview` はデバッグ用です（ウィンドウを出します）。
@@ -97,13 +21,8 @@ python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-serial 9256
 - `--aruco-corner-ids` は箱の正面四隅（TL,TR,BR,BL）のIDを指定します。
 - 疑似深度は `--z-like-*` オプション（scale/offset/clamp/smoothing）で調整できます。
 
-## Box平面のデバッグ（おすすめ）
+## Box平面のデバッグ
 ArUcoが見えているか／箱平面（0..1）へ写像できているかを確認する場合：
-```powershell
-python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3
-```
-
-### RealSense（D435iなど）でのデバッグ表示
 ```powershell
 python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3
 ```
