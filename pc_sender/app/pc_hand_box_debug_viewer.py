@@ -1,6 +1,6 @@
 r"""
 pc_sender直下
-..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --source realsense --rs-serial <D435I_SERIAL> --rs-fps 30 --model .\models\hand_landmarker.task --width 1280 --height 720 --aruco-dict DICT_4X4_50 --aruco-corner-ids 0,1,2,3
+..\.\.venv\Scripts\python .\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model .\models\hand_landmarker.task --width 1280 --height 720 --aruco-dict DICT_4X4_50 --aruco-corner-ids 0,1,2,3
 """
 import argparse
 import time

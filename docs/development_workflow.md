@@ -19,7 +19,7 @@
 - 送信確認：`python pc_sender/app/pc_hand_box_sender.py --source realsense --rs-fps 30 --config pc_sender/config/endpoint.json --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 - 固定値コマンド集（本番用）：`docs/runbook_d435i_commands.md`
 
-## 1. 計測フェーズ（送信PCのみ）
+## 1. 計測フェーズ（送信PCのみ）→ok
 目的：ArUco平面推定と手検出を安定させる（物理配置が9割）。
 
 - 起動（デバッグ表示）：`pc_sender/app/pc_hand_box_debug_viewer.py`
@@ -31,7 +31,7 @@
 - マーカーは大きく、**白フチを確保**、照明は均一
 - 黒フェルト、黒布、艶消し塗装など
 
-## 2. 通信フェーズ（送信PC → TouchDesigner）
+## 2. 通信フェーズ（送信PC → TouchDesigner）→OK
 目的：UDP受信の安定化とロスト処理の骨格を固める。
 
 - 受信側（TouchDesigner PC）の前提：
