@@ -520,7 +520,11 @@ def main() -> int:
 
                 if h_img_to_box is not None:
                     # draw box corners (marker centers)
+                    # Note: when reusing a stale homography (aruco_stale=true),
+                    # current-frame marker centers may be missing.
                     for cid in corner_ids:
+                        if cid not in centers_px:
+                            continue
                         cx, cy = centers_px[cid]
                         cv2.circle(vis, (int(cx), int(cy)), 6, (0, 255, 0), -1)
 
