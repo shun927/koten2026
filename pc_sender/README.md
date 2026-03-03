@@ -9,7 +9,7 @@ python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --co
 ```
 
 固定値でそのまま使うコマンド集：
-- `docs/runbook_d435i_commands.md`
+- `docs/runbook.md`（「送信PC：D435iコマンド（固定値）」）
 
 ### RealSense（D435iなど）をカメラ入力に使う
 Webカメラ（OpenCV）ではなく RealSense のColor映像を入力にしたい場合は `--source realsense` を使います。

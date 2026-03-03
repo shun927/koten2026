@@ -67,8 +67,8 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 3. デバッグ受信する場合は次を実行（任意）:
    - `python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty`
 
-本番当日のチェック（1枚）は次を参照：
-- `docs/runbook_site_checklist.md`
+本番当日のチェック（現場用）：
+- `docs/runbook.md`
 
 ## コマンド表記（venvの統一）
 このリポジトリでは、**リポジトリ直下の `.venv` を activate してから `python ...` を実行**する表記に統一します。
@@ -90,7 +90,7 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
    - `python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 
 固定値でそのまま使うコマンド集：
-- `docs/runbook_d435i_commands.md`
+- `docs/runbook.md`（「送信PC：D435iコマンド（固定値）」）
 
 注意：
 - Windowsのファイアウォールで UDP `5005` を許可してください（手順は `docs/requirements_network_pc_direct.md`）。
@@ -103,8 +103,7 @@ koten2026/
   docs/
     considerations.md
     development_workflow.md
-    runbook_site_checklist.md
-    runbook_d435i_commands.md
+    runbook.md
     requirements_network_pc_direct.md
     requirements_message_format.md
     requirements_message_format_box_plane.md

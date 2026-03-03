@@ -5,7 +5,7 @@
 推奨：Unity側は「点群表示」→「手リグ」→「演出」の順で進める。
 
 本番当日のチェック（現場用）は次に集約：
-- `docs/runbook_site_checklist.md`
+- `docs/runbook.md`
 
 ## 0. ゴール（合格条件の例）
 - `aruco_ok=true` が安定して維持できる（多少 `stale` が出ても復帰する）
@@ -20,7 +20,7 @@
 - スモークテスト：`pc_sender/run_realsense_smoke_test.ps1`（venvとパスを自動で解決）
 - ArUco/手検出確認：`python pc_sender/app/pc_hand_box_debug_viewer.py --source realsense --rs-fps 30 --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --flip --aruco-corner-ids 0,1,2,3`
 - 送信確認：`python pc_sender/app/pc_hand_box_sender.py --source realsense --rs-fps 30 --config pc_sender/config/endpoint.json --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
-- 固定値コマンド集（本番用）：`docs/runbook_d435i_commands.md`
+- 固定値コマンド集（本番用）：`docs/runbook.md`（「送信PC：D435iコマンド（固定値）」）
 
 ## 1. 計測フェーズ（送信PCのみ）→ok
 目的：ArUco平面推定と手検出を安定させる（物理配置が9割）。

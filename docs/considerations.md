@@ -96,4 +96,4 @@
 - 本番前にクリーンなvenvで再インストール確認
 
 ## 6. 開演前チェックリスト
-現場用のチェックは `docs/runbook_site_checklist.md` に集約します。
+現場用のチェックは `docs/runbook.md` に集約します。
