@@ -18,7 +18,7 @@
 
 ### 2.2 旧仕様（参考）：指先相対3Dモード
 既存資産との互換のために残します。新規はBox平面モードを推奨。
-- メッセージ仕様: `docs/requirements_message_format.md`（`v=1`）
+- メッセージ仕様: `docs/archive/requirements_message_format.md`（`v=1`、旧仕様・参考）
 - 利用フィールド:
   - `t_ms`, `seq`, `valid`, `tip_img`, `tip_norm`
 
@@ -108,9 +108,11 @@ UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で
 必要なら追加:
 - デバッグ用に `seq`（int）, `t_ms`（int）を別アドレスで送る
 
-### 7.3 2台運用（有線直結）の注意
-直結で固定IP運用する場合は、OSC Out の宛先IPを「受信するPCの固定IP」に設定する。
-例：自分のPCが `192.168.10.2` の場合、TouchDesignerのOSC Outは `192.168.10.2` 宛て。
+### 7.3 OSC Out の宛先IP
+- **同一PC（Unity/soundを自分のPCで動かす場合）**: `127.0.0.1` を宛先にする（ファイアウォール不要）
+- **別PC（3台運用）**: Unity/sound PCの固定IPを宛先にする
+  - 例：Unity/sound PCが `192.168.10.3` の場合、TouchDesignerのOSC Outは `192.168.10.3` 宛て
+  - Unity/sound PC側のファイアウォールでOSC受信ポートを許可すること（`docs/requirements_network_pc_direct.md` §4.3 参照）
 
 ## 8. 監視項目（本番時）
 - 受信FPS（目標15以上）

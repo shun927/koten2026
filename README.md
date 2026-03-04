@@ -2,7 +2,7 @@
 
 このリポジトリは、PC + **Intel RealSense D435i** で手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
 
-- 旧：人差し指先端の相対3D（`docs/requirements_message_format.md`）
+- 旧：人差し指先端の相対3D（`docs/archive/requirements_message_format.md`、旧仕様・参考）
 - 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z、両手21点、`docs/requirements_message_format_box_plane.md`）
 
 ## 作品システム（案）
@@ -20,7 +20,9 @@
 - 座標処理の正本はtouchに寄せる（送信側PCは「箱疑似3Dランドマーク＋`seq`＋`t_ms`」を送る）
 - ロスト時挙動をtouchで統一（例：`aruco.ok=false` が続いたらホールド→フェード→無効）
 - OSCの仕様（アドレス/引数順）を先に固定して、Unityとsoundで同じ前提にする
- - 例: `/box/finger/left` と `/box/finger/right` に `x y z valid` を送る
+ - 推奨（21点）: `/box/hand/left/lm3d` に 63 floats + `/box/hand/left/valid` に int（右も同様）
+ - 最小（互換）: `/box/finger/left` と `/box/finger/right` に `x y z valid`
+ - 受信ポート（仮）: Unity `9000`（チームで確定後に更新）
 
 ## Box体験の前提（おすすめ）
 - カメラは「箱の正面中心」から正面向き（箱の正面平面にできるだけ垂直）に固定（AruCo平面推定が安定）
@@ -100,17 +102,18 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 koten2026/
   README.md
   .gitignore
+  ArUco_image/          # ArUcoマーカー画像（印刷用）
   docs/
     considerations.md
     development_workflow.md
     runbook.md
     requirements_network_pc_direct.md
-    requirements_message_format.md
     requirements_message_format_box_plane.md
     requirements_unity.md
     requirements_touch.md
     archive/
       requirements_raspberrypi.md
+      requirements_message_format.md  # 旧仕様（参考）
   pc_sender/
     README.md
     requirements.txt

@@ -6,7 +6,7 @@
 
 ## 1. 前提
 - 単一カメラのため、Z（奥行き）は推定の相対値であり、絶対距離（mm）精度は狙わない
-- 送信する座標仕様は `docs/requirements_message_format.md` に従う
+- 送信する座標仕様は `docs/archive/requirements_message_format.md` に従う（旧仕様・参考）
 
 ## 2. 推奨アーキテクチャ
 **Piで推論（Python）→ UDPでPCへ座標送信**

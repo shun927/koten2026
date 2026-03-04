@@ -22,7 +22,7 @@
 - 送信確認：`python pc_sender/app/pc_hand_box_sender.py --source realsense --rs-fps 30 --config pc_sender/config/endpoint.json --model pc_sender/models/hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3`
 - 固定値コマンド集（本番用）：`docs/runbook.md`（「送信PC：D435iコマンド（固定値）」）
 
-## 1. 計測フェーズ（送信PCのみ）→ok
+## 1. 計測フェーズ（送信PCのみ）→OK
 目的：ArUco平面推定と手検出を安定させる（物理配置が9割）。
 
 - 起動（デバッグ表示）：`pc_sender/app/pc_hand_box_debug_viewer.py`
@@ -51,19 +51,180 @@
   - `aruco.ok=false` や `hands: []` でも「通信」自体の確認はできる（まずは UDP 5005 が届くことが重要）
 
 ## 3. OSCフェーズ（TouchDesigner → Unity）
-目的：Unity側は受信と可視化だけ先に完成させる（手リグはまだ）。
+目的：Unity側は受信と可視化だけ先に完成させる（手リグはまだ）。TouchDesigner → Unity に 63 floats 届く → 全部点として表示するだけつまり通信のテスト。
 
-推奨の最小実装：
-- `lm3d[63] + valid` を受け取り、箱平面上に「点群」を表示する
-- valid=0 のときは点群をフェードアウトする
+参照：
+- OSC出力仕様（アドレス・引数順）：`docs/requirements_touch.md` §7
+- Unity側の受信仕様：`docs/requirements_unity.md` §2.1
+- OSC受信ポート（仮）：`9000`（チームで確定後に更新）
+
+### 3.1 前提（OSCアドレスとデータ形式を先に固定する）
+
+推奨アドレス（`docs/requirements_touch.md` §7.2 より）：
+
+| アドレス | 型 | 内容 |
+|---|---|---|
+| `/box/hand/left/lm3d` | 63 floats | 左手21点 (x0,y0,z0,...,x20,y20,z20) |
+| `/box/hand/right/lm3d` | 63 floats | 右手21点（同上） |
+| `/box/hand/left/valid` | int (0/1) | 左手検出フラグ |
+| `/box/hand/right/valid` | int (0/1) | 右手検出フラグ |
+
+デバッグ用（任意）：
+- `/box/aruco/ok`（int 0/1）
+- `/box/aruco/stale`（int 0/1）
+- `/box/aruco/age_ms`（int）
+
+座標系：
+- `x, y`：箱の正面平面の正規化座標（左上=(0,0), 右下=(1,1)）
+- `z`：疑似深度（単眼推定、演出用。`z_like`）
+
+### 3.2 TouchDesigner側：OSC Out の設定
+
+1. **OSC Out CHOP** を追加
+   - 宛先IP：UnityPCと同じPCなら `127.0.0.1`、別PCなら固定IP（例：`192.168.10.3`）
+   - 宛先ポート：`9000`（仮。Unity側と合わせる）
+2. `/box/hand/left/lm3d` に 63 floats を1メッセージで送る（右手も同様）
+3. `/box/hand/left/valid` に int (0/1) を送る
+4. デバッグ用に `/box/aruco/ok` も送ると Unity 側の切り分けが楽
+
+合格の目安（TouchDesigner）：
+- `OSC Out CHOP` がクックしている
+- 手を動かしたとき `/box/hand/left/lm3d` の値が変化している
+
+### 3.3 Unity側：OSC受信の実装（最小）
+
+#### OSCライブラリの選択
+Unity で OSC を受けるには外部ライブラリが必要。候補：
+- **uOSC**（推奨）：Package Manager から導入可。メインスレッドへの橋渡しが容易
+- **OscJack**：軽量。`AddressHandler` でアドレスごとにコールバックを登録する方式
+
+#### 受信ポートの設定
+- OSCサーバーの受信ポートを `9000`（仮）に設定
+- **別PCで運用する場合**は WindowsファイアウォールでUDP `9000` を許可（`docs/requirements_network_pc_direct.md` §4.3 参照）
+- 同一PCなら `127.0.0.1` で受けるためファイアウォール不要
+
+#### 63 floats → 21点への分解
+
+```csharp
+// 例（uOSC想定）
+void OnDataReceived(string address, OscMessage message)
+{
+    if (address == "/box/hand/left/lm3d")
+    {
+        // 63 floats → 21点 (x, y, z) に分解
+        // 注意: uOSC の values は object[] で float が double で届くことがある
+        //       (float)(double) とキャストするのが安全
+        for (int i = 0; i < 21; i++)
+        {
+            float x = (float)(double)message.values[i * 3];
+            float y = (float)(double)message.values[i * 3 + 1];
+            float z = (float)(double)message.values[i * 3 + 2];
+            // x,y は 0..1 の箱平面座標
+            // y は箱座標系で下方向が+なので Unity の座標系に合わせて反転
+            points[i].localPosition = new Vector3(x, 1f - y, z);
+        }
+    }
+    if (address == "/box/hand/left/valid")
+    {
+        bool valid = (int)message.values[0] == 1;
+        SetHandVisible(valid);
+    }
+}
+```
+
+ランドマーク対応（主要インデックス）：
+- `0`：手首
+- `8`：人差し指先端
+- `4`：親指先端
+- `12`：中指先端
+- 全21点の定義は MediaPipe Hand Landmarks 参照
+
+ポイント：
+- `z`（`z_like`）はノイズが出やすいので Unity 側でも EMA 平滑化推奨（alpha: 0.5 程度から調整）
+- `x,y` も平滑化する場合、TouchDesigner 側と二重にかかるので alpha を弱めに（0.2〜0.4）
+
+#### valid=0 のフェードアウト
+- `valid=0` になったら Material の alpha をランプで下げてフェードアウト
+- EMA や Lerp を挟むと自然な消え方になる（突然消えない）
+- 受信が途切れた場合に備えて、Unity 側でも「最終受信から N ms 経ったら valid=0 扱い」にするとより安全
+
+### 3.4 合格の目安
+
+| 確認項目 | 合格条件 |
+|---|---|
+| TouchDesigner でOSCが送信されている | `OSC Out CHOP` がクックしており値が変化している |
+| Unity でランドマーク点群が動く | 手を動かすと点群が追従する |
+| valid=0 でフェードアウトする | 手を隠したとき点群がフェードして消える |
+| 左右が入れ替わらない | 左穴の手が常に左の点群に出る |
+| `aruco.ok=false` でもクラッシュしない | 点群がホールド→フェードで安定する |
 
 ## 4. リグ・演出フェーズ（Unity）
-目的：点群で安定した後に、手モデルへ落とす。
+目的：点群で安定した後に、手モデルへ落とす。ここでその 63 floats のうち、どの点をどう使うかを決める（2点 or 21点）。
+
+OSC仕様の変更は不要（`lm3d` 63 floats はそのまま）。Unity側でどの点を使うかだけ変える。
+
+### 4.1 ステップ1：2点（手首＋人差し指先）→ 指さし手CG回転
+実装コスト：低〜中（1〜2日）
+
+```
+手首     = lm3d[index=0]  → CG の位置
+人差し指先 = lm3d[index=8]  → 方向ベクトルの終点
+方向     = lm[8].pos - lm[0].pos → LookAt でこの向きに回転
+```
+
+できること：
+- 手を左右・上下に傾けると CG も同じ向きに回転する（**体験の核心が成立する**）
+- 手全体を移動すると CG も追従する
+- `z_like`（index=0 の z）で前後移動も表現できる（精度は演出レベル）
+
+できないこと：指の曲げ伸ばし・親指の開閉（21点が必要）
+
+#### Blenderでのモデル作成ポイント（👉用）
+
+ポーズ（形状）：
+- **人差し指を伸ばし、他の指を曲げた「指さし」ポーズで静止した状態**で作る（ボーン不要）
+- ポーズはモデルに焼き込む（ステップ1ではアニメーション・リグは不要）
+
+原点（ピボット）の位置 ── 最重要：
+- **手首の位置に原点を置く**（`lm3d[0]` の座標をそのまま position に使うため）
+- Blender で `Object > Set Origin > Origin to ...` で調整、またはモデルを手首が原点に来るよう移動して `Apply All Transforms`
+
+向き ── LookRotation が正しく効くための条件：
+- **人差し指が伸びている方向 = Blender の -Y 方向**（Unity に持ち込むと +Z 方向 = forward になる）
+- 手の甲が上（Blender の +Z 方向 = Unity の +Y 方向）
+- ずれていると `LookRotation` したときにモデルが横や後ろを向く → Blender 側で直すか Unity で `localRotation` オフセットを加える
+
+エクスポート前に必ずやること：
+- `Ctrl+A` → **Apply All Transforms**（Scale/Rotation を適用してから FBX/glTF 出力）
+
+#### Unityでの実装例
+
+```csharp
+Vector3 wristPos   = points[0].localPosition;   // lm3d index 0
+Vector3 tipPos     = points[8].localPosition;   // lm3d index 8
+Vector3 dir        = (tipPos - wristPos).normalized;
+handModel.position = wristPos;
+handModel.rotation = Quaternion.LookRotation(dir, Vector3.up);
+```
+
+合格の目安：
+- 手を上下左右に傾けると hand CG が追従して回転する
+- 手を隠すと valid=0 でフェードアウトする
+
+### 4.2 ステップ2（任意）：21点 → 指のボーン駆動
+実装コスト：高（数日〜1週間）
+
+体験上「指を曲げる/開く」演出が必要になった段階で着手する。
 
 進め方：
-- まず手首（0）と指先（8）だけで動きを出す
-- 次に各指のボーンへ展開
-- `z_like` は演出用として強め平滑化・レンジ制限して使う（計測用途にしない）
+- 各指 3点（MCP→PIP→DIP→TIP）から2ベクトルを作り、関節角を計算してボーン回転に落とす
+- まず人差し指（index 5→6→7→8）1本だけ動かして感触を確認
+- 安定したら全指（5本）へ展開
+- IK / LookAt / ボーン直接回転のどれを使うかはモデル構造に依存
+
+注意：
+- `z_like` はノイズが出やすいため、関節角の計算には `x,y` だけ使う方が安定しやすい
+- `z_like` は演出用（前後ふわっとした動き）に強め平滑化・レンジ制限して使う（計測用途にしない）
 
 ## 5. 運用テスト（本番想定）
 目的：再現性のある「チェックリスト」で最後に潰し込む。

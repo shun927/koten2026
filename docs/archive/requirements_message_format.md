@@ -1,9 +1,8 @@
-# 座標送信 メッセージ仕様（送信PC→TouchDesigner / UDP / 相対3D）
+# 【旧仕様・参考】座標送信 メッセージ仕様（送信PC→TouchDesigner / UDP / 相対3D）
+
+> **非推奨**: 新規実装は Box平面モード（`docs/requirements_message_format_box_plane.md`）を使ってください。この仕様は既存資産との互換のために残しています。
 
 この仕様は「PC（単一カメラ）で推定した人差し指先端の相対3D」をTouchDesignerへ安定して送るための要件です。
-
-箱の正面平面（ArUcoで0..1座標に変換）を送る場合は別仕様：
-- `docs/requirements_message_format_box_plane.md`
 
 ## 1. 目的 / 非目的
 
