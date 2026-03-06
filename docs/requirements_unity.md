@@ -21,10 +21,12 @@
 
 ### 2.1 TouchDesigner → Unity（OSC）の推奨入力
 手CGを動かすなら、21点（疑似3D）を受け取れるようにする。
-- `/box/hand/left/lm3d`: 63 floats（x0,y0,z0,...,x20,y20,z20）
-- `/box/hand/right/lm3d`: 63 floats（同上）
+- `/box/hand/left/lm3d/0` ～ `/box/hand/left/lm3d/62`: float 各1値（計63メッセージ、x0,y0,z0,...,x20,y20,z20）
+- `/box/hand/right/lm3d/0` ～ `/box/hand/right/lm3d/62`: float 各1値（同上）
 - `/box/hand/left/valid`: int（0/1）
 - `/box/hand/right/valid`: int（0/1）
+
+> TD の OSC Out CHOP は1ch=1値で送出するため、Unity 側は63個別メッセージをバッファして `Update()` で適用する（`HandReceiver.cs` 参照）。
 
 最小（互換/試作）:
 - `/box/finger/left`: `x y z valid`（`z` は疑似深度）

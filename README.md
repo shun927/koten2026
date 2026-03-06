@@ -20,7 +20,7 @@
 - 座標処理の正本はtouchに寄せる（送信側PCは「箱疑似3Dランドマーク＋`seq`＋`t_ms`」を送る）
 - ロスト時挙動をtouchで統一（例：`aruco.ok=false` が続いたらホールド→フェード→無効）
 - OSCの仕様（アドレス/引数順）を先に固定して、Unityとsoundで同じ前提にする
- - 推奨（21点）: `/box/hand/left/lm3d` に 63 floats + `/box/hand/left/valid` に int（右も同様）
+ - 推奨（21点）: `/box/hand/left/lm3d/0`～`/62` に float×63ch + `/box/hand/left/valid` に int（右も同様） ※TD OSC Out CHOP の制約で63個別chで送出
  - 最小（互換）: `/box/finger/left` と `/box/finger/right` に `x y z valid`
  - 受信ポート（仮）: Unity `9000`（チームで確定後に更新）
 
@@ -116,19 +116,34 @@ koten2026/
     requirements_touch.md
     archive/
       requirements_raspberrypi.md
-      requirements_message_format.md  # 旧仕様（参考）
+      requirements_message_format.md
   pc_sender/
     README.md
     requirements.txt
+    run_realsense_smoke_test.ps1
     config/
-      endpoint.example.json
+      endpoint.example.json   # endpoint.json は .gitignore 済み
     app/
       pc_hand_box_sender.py
       pc_hand_box_debug_viewer.py
+      pc_realsense_smoke_test.py
     models/
-      hand_landmarker.task
+      hand_landmarker.task    # .gitignore 済み（各自ダウンロード）
   pc_receiver/
     udp_receiver.py
+  td_project/
+    README.md
+    koten2026.toe             # TouchDesignerプロジェクト
+    callbacks/
+      udpin1_callbacks.py     # UDP In DAT の onReceive
+      script2_callbacks.py    # Script CHOP の cook()
+  unity_project/
+    README.md
+    HandTrackingApp/
+      Assets/
+        scripts/
+          HandReceiver.cs         # OSC受信・点群適用
+          HandPointsGenerator.cs  # メニューから点群GameObject生成
 ```
 
 ## 用意するもの（ハード）

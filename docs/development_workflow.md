@@ -50,8 +50,8 @@
   - 大きな `seq jump` が常発しない（Wi-Fiではなく直結で改善しやすい）
   - `aruco.ok=false` や `hands: []` でも「通信」自体の確認はできる（まずは UDP 5005 が届くことが重要）
 
-## 3. OSCフェーズ（TouchDesigner → Unity）
-目的：Unity側は受信と可視化だけ先に完成させる（手リグはまだ）。TouchDesigner → Unity に 63 floats 届く → 全部点として表示するだけつまり通信のテスト。
+## 3. OSCフェーズ（TouchDesigner → Unity）→OK
+目的：Unity側は受信と可視化だけ先に完成させる（手リグはまだ）。TouchDesigner → Unity に 21点×3値=63 float値が届く → 全部点として表示するだけつまり通信のテスト。
 
 参照：
 - OSC出力仕様（アドレス・引数順）：`docs/requirements_touch.md` §7
@@ -64,10 +64,12 @@
 
 | アドレス | 型 | 内容 |
 |---|---|---|
-| `/box/hand/left/lm3d` | 63 floats | 左手21点 (x0,y0,z0,...,x20,y20,z20) |
-| `/box/hand/right/lm3d` | 63 floats | 右手21点（同上） |
+| `/box/hand/left/lm3d/0` ~ `/62` | float×63ch | 左手21点（各1値。x0,y0,z0,...,x20,y20,z20） |
+| `/box/hand/right/lm3d/0` ~ `/62` | float×63ch | 右手21点（同上） |
 | `/box/hand/left/valid` | int (0/1) | 左手検出フラグ |
 | `/box/hand/right/valid` | int (0/1) | 右手検出フラグ |
+
+> **実装上の注意**：TD の OSC Out CHOP は1チャンネル=1 OSCメッセージ（1値）で送るため、63floatsを1メッセージで送ることが**できない**。`td_project/callbacks/script2_callbacks.py` では63個の独立チャンネル（各1サンプル）として出力している。Unity 側の `HandReceiver.cs` はこれを受信してバッファに蓄積し、`Update()` でまとめて適用する。
 
 デバッグ用（任意）：
 - `/box/aruco/ok`（int 0/1）
@@ -78,75 +80,143 @@
 - `x, y`：箱の正面平面の正規化座標（左上=(0,0), 右下=(1,1)）
 - `z`：疑似深度（単眼推定、演出用。`z_like`）
 
-### 3.2 TouchDesigner側：OSC Out の設定
+### 3.2 TouchDesigner側：ノード構成と OSC Out の設定
 
-1. **OSC Out CHOP** を追加
-   - 宛先IP：UnityPCと同じPCなら `127.0.0.1`、別PCなら固定IP（例：`192.168.10.3`）
-   - 宛先ポート：`9000`（仮。Unity側と合わせる）
-2. `/box/hand/left/lm3d` に 63 floats を1メッセージで送る（右手も同様）
-3. `/box/hand/left/valid` に int (0/1) を送る
-4. デバッグ用に `/box/aruco/ok` も送ると Unity 側の切り分けが楽
+上流に「JSONを受信してCHOPチャンネルを作る」ノードが必要。
+全体の流れは次のとおり：
 
-合格の目安（TouchDesigner）：
-- `OSC Out CHOP` がクックしている
-- 手を動かしたとき `/box/hand/left/lm3d` の値が変化している
+```
+udpin1（UDP In DAT, port 5005）
+    ↓ callbacks（udpin1_callbacks）で onReceive → parent().store()
+script2（Script CHOP）← script2_callbacks の cook() で parent().fetch() → appendChan
+    ↓
+oscout1（OSC Out CHOP）→ Unity へ
+```
+
+> **注意**：途中に Script DAT を挟む必要はない。`udpin1_callbacks` の `onReceive` で直接 `parent().store()` し、`script2_callbacks` の `cook()` で `parent().fetch()` する。
+
+#### ステップ1：UDP In DAT を追加
+- **UDP In DAT**（`udpin1`）をネットワークに配置
+- パラメータ：
+  - `Network Port` = `5005`、`Active` = `On`
+  - **`Row/Callback Format` = `One Per Message`**（デフォルトの `One Per Line` のままだとバイトが溜まって警告が出る）
+- 送信PCが動いていれば DAT にJSONが流れてくる（右クリック → View で確認）
+
+合格の目安：
+- DATのテキストに `{"v":2,"kind":"box_plane",...}` が表示され更新され続ける
+
+#### ステップ2：udpin1_callbacks に onReceive を記述
+
+`udpin1` を選択 → パラメータ右上の Python アイコン → `udpin1_callbacks` を開き、以下のファイルの内容をコピーして貼り付ける：
+
+→ `td_project/callbacks/udpin1_callbacks.py`
+
+#### ステップ3：Script CHOP（script2）と script2_callbacks を追加
+
+- **Script CHOP**（`script2`）をネットワークに配置（`udpin1` との入力接続は不要）
+- `script2` を選択 → `script2_callbacks` を開き、以下のファイルの内容をコピーして貼り付ける：
+
+→ `td_project/callbacks/script2_callbacks.py`
+
+> **チャンネル名の `/` について**：TD の OSC Out CHOP はチャンネル名の前に `/` を自動で付加する。`appendChan` の引数に `/` を付けると `//box/...` になるので **付けない**。
+
+生成されるチャンネル（`script2` に表示されること）：
+
+| チャンネル名（TDでの表示） | OSCアドレス（送出） | 値の数 |
+|---|---|---|
+| `box/aruco/ok` | `/box/aruco/ok` | 1 |
+| `box/aruco/stale` | `/box/aruco/stale` | 1 |
+| `box/hand/left/valid` | `/box/hand/left/valid` | 1 |
+| `box/hand/left/lm3d/0` ~ `box/hand/left/lm3d/62` | `/box/hand/left/lm3d/0` ~ `/62` | 各1（計63ch） |
+| `box/hand/right/valid` | `/box/hand/right/valid` | 1 |
+| `box/hand/right/lm3d/0` ~ `box/hand/right/lm3d/62` | `/box/hand/right/lm3d/0` ~ `/62` | 各1（計63ch） |
+
+> **なぜ 63 個別チャンネルか？**：TD の OSC Out CHOP は「1チャンネル＝1 OSC メッセージ（1値）」で送出する。1チャンネルに63サンプルを入れても現在のタイムスライスの1値しか送られないため、63個の独立チャンネル（各1サンプル）にしている。
+
+補足：`aruco.ok=false` のときは `lm_box3` が null になるので、Script 側で前フレームの値を保持（ホールド）する処理を入れると安定する（詳細は `docs/requirements_touch.md` §6）。
+
+#### ステップ4：OSC Out CHOP を接続・設定
+- **OSC Out CHOP**（`oscout1`）を `script2` の下流に接続
+- パラメータ設定：
+  - `Network Address`：UnityPCと同じPCなら `localhost`、別PCなら固定IP（例：`192.168.10.3`）
+  - `Network Port`：`9000`（仮。Unity側と合わせる）
+  - `Numeric Format`：`Float (32 bit)`
+  - `Data Format`：`Time Slice`
+  - `Cook Every Frame`：`On`
+
+#### 合格の目安
+- `oscout1` がクックしている（緑枠、警告なし）
+- 手を動かしたとき `script2` の `box/hand/left/lm3d` チャンネルの値が変化している
+- Unity 側でパケットが届いている（次のステップ §3.3 で確認）
+
+TDプロジェクトファイルの保管先：`td_project/` フォルダ参照。
 
 ### 3.3 Unity側：OSC受信の実装（最小）
 
-#### OSCライブラリの選択
-Unity で OSC を受けるには外部ライブラリが必要。候補：
-- **uOSC**（推奨）：Package Manager から導入可。メインスレッドへの橋渡しが容易
-- **OscJack**：軽量。`AddressHandler` でアドレスごとにコールバックを登録する方式
+#### ステップ1：uOSC のインストール
 
-#### 受信ポートの設定
-- OSCサーバーの受信ポートを `9000`（仮）に設定
-- **別PCで運用する場合**は WindowsファイアウォールでUDP `9000` を許可（`docs/requirements_network_pc_direct.md` §4.3 参照）
-- 同一PCなら `127.0.0.1` で受けるためファイアウォール不要
+1. Unity メニュー → **Window → Package Manager**
+2. 左上の **＋** → **Add package from git URL...**
+3. 以下を入力して Add：
+   ```
+   https://github.com/hecomi/uOSC.git#upm
+   ```
+4. インポート完了後、`uOSC` が Packages に表示されることを確認
 
-#### 63 floats → 21点への分解
+#### ステップ2：シーンに OscServer を配置
 
-```csharp
-// 例（uOSC想定）
-void OnDataReceived(string address, OscMessage message)
-{
-    if (address == "/box/hand/left/lm3d")
-    {
-        // 63 floats → 21点 (x, y, z) に分解
-        // 注意: uOSC の values は object[] で float が double で届くことがある
-        //       (float)(double) とキャストするのが安全
-        for (int i = 0; i < 21; i++)
-        {
-            float x = (float)(double)message.values[i * 3];
-            float y = (float)(double)message.values[i * 3 + 1];
-            float z = (float)(double)message.values[i * 3 + 2];
-            // x,y は 0..1 の箱平面座標
-            // y は箱座標系で下方向が+なので Unity の座標系に合わせて反転
-            points[i].localPosition = new Vector3(x, 1f - y, z);
-        }
-    }
-    if (address == "/box/hand/left/valid")
-    {
-        bool valid = (int)message.values[0] == 1;
-        SetHandVisible(valid);
-    }
-}
-```
+1. Hierarchy で空の GameObject を作成 → 名前を `OscManager` にする
+2. Inspector → **Add Component → uOSC → uOsc Server**
+3. `OscServer` のパラメータ：
+   - `Port`：`9000`
+   - その他はデフォルトのまま
 
-ランドマーク対応（主要インデックス）：
-- `0`：手首
-- `8`：人差し指先端
-- `4`：親指先端
-- `12`：中指先端
-- 全21点の定義は MediaPipe Hand Landmarks 参照
+> **別PCで運用する場合**：Windows ファイアウォールで UDP `9000` の受信を許可する（`docs/requirements_network_pc_direct.md` §4.3 参照）。同一PCなら不要。
 
-ポイント：
-- `z`（`z_like`）はノイズが出やすいので Unity 側でも EMA 平滑化推奨（alpha: 0.5 程度から調整）
-- `x,y` も平滑化する場合、TouchDesigner 側と二重にかかるので alpha を弱めに（0.2〜0.4）
+#### ステップ3：受信スクリプトの作成
 
-#### valid=0 のフェードアウト
-- `valid=0` になったら Material の alpha をランプで下げてフェードアウト
-- EMA や Lerp を挟むと自然な消え方になる（突然消えない）
-- 受信が途切れた場合に備えて、Unity 側でも「最終受信から N ms 経ったら valid=0 扱い」にするとより安全
+以下のファイルを Unity プロジェクトの Assets フォルダにコピーして `OscManager` にアタッチする：
+
+→ `unity_project/HandTrackingApp/Assets/scripts/HandReceiver.cs`
+
+#### ステップ4：点群 GameObject の作成
+
+1. Unity メニュー **koten2026 > Create Hand Points** を実行すると `LeftHand` / `RightHand` が自動生成される（Scale: 0.05、Transparent マテリアル付き）。手動で作る場合は Sphere × 21（Scale: 0.05程度）
+2. 同様に `RightHand` を作成
+3. `HandReceiver` の `Left Points` 配列に `LeftHand` の子21個をドラッグ、`Right Points` に `RightHand` の子21個をドラッグ
+4. `Left Renderers` / `Right Renderers` にも同じ Sphere の `MeshRenderer` を登録
+5. Sphere のマテリアルを Transparent（URP なら `Surface Type = Transparent`）に設定
+
+> Sphere でなく `GL.LINES` や `LineRenderer` で骨格を引いても良い。まずは点だけで動作確認する。
+
+#### ステップ5：動作確認
+
+1. Unity Play ボタンを押す
+2. TouchDesigner の送信が動いている状態で、手をカメラに向ける
+3. Hierarchy の `LeftHand` 下の Sphere が動けば受信成功
+4. Console にエラーが出る場合：
+   - `uOSC.OscServer が見つからない` → `OscManager` に `OscServer` コンポーネントがアタッチされているか確認
+   - 受信できない → `oscout1` の `Network Address` が Unity PC の IP（同一PCなら `127.0.0.1`）になっているか確認
+
+#### ランドマーク対応（主要インデックス）
+
+| インデックス | 部位 |
+|---|---|
+| 0 | 手首 |
+| 4 | 親指先端 |
+| 8 | 人差し指先端 |
+| 12 | 中指先端 |
+| 16 | 薬指先端 |
+| 20 | 小指先端 |
+
+全21点の定義は [MediaPipe Hand Landmarks](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) 参照。
+
+#### 補足：z（z_like）の扱い
+
+- `z_like` は単眼推定による疑似深度でノイズが多い
+- 点群表示では `* 0.1f` 程度にスケールを抑えて演出用として使う
+- 関節角の計算には使わない（x,y のみ使用）
+- Unity 側でも EMA 平滑化推奨：`smoothZ = Mathf.Lerp(smoothZ, rawZ, 0.4f)`
 
 ### 3.4 合格の目安
 
@@ -159,9 +229,9 @@ void OnDataReceived(string address, OscMessage message)
 | `aruco.ok=false` でもクラッシュしない | 点群がホールド→フェードで安定する |
 
 ## 4. リグ・演出フェーズ（Unity）
-目的：点群で安定した後に、手モデルへ落とす。ここでその 63 floats のうち、どの点をどう使うかを決める（2点 or 21点）。
+目的：点群で安定した後に、手モデルへ落とす。ここでその 63 float値のうち、どの点をどう使うかを決める（2点 or 21点）。
 
-OSC仕様の変更は不要（`lm3d` 63 floats はそのまま）。Unity側でどの点を使うかだけ変える。
+OSC仕様の変更は不要（`lm3d` の63値はそのまま）。Unity側でどの点を使うかだけ変える。
 
 ### 4.1 ステップ1：2点（手首＋人差し指先）→ 指さし手CG回転
 実装コスト：低〜中（1〜2日）

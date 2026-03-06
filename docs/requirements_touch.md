@@ -92,9 +92,10 @@ UnityPC / soundPC が別PCでも扱いやすいように、左右2chを固定で
 - 右穴: `/box/finger/right` に `x y z valid`（float,float,float,int）
 
 ### 7.2 推奨（手の21点：Unityで手CGを動かす）
-1メッセージで63個（x0,y0,z0,...,x20,y20,z20）を送る。
-- 左手: `/box/hand/left/lm3d` に 63 floats（x,yは0..1箱平面、zは疑似深度）
-- 右手: `/box/hand/right/lm3d` に 63 floats（同上）
+TD の OSC Out CHOP は1チャンネル=1値のため、63個の独立チャンネルとして送る。
+- 左手: `/box/hand/left/lm3d/0` ～ `/box/hand/left/lm3d/62`（各 float 1値、計63ch）
+- 右手: `/box/hand/right/lm3d/0` ～ `/box/hand/right/lm3d/62`（同上）
+- 順序: x0,y0,z0, x1,y1,z1, ..., x20,y20,z20（x,yは0..1箱平面、zは疑似深度）
 - `valid` は別アドレスで送る（int）
   - `/box/hand/left/valid`
   - `/box/hand/right/valid`

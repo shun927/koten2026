@@ -12,3 +12,9 @@ Thumbs.db
 # Local config
 **/config/endpoint.json
 
+# Unity generated / cache
+unity_project/HandTrackingApp/Library/
+unity_project/HandTrackingApp/Temp/
+unity_project/HandTrackingApp/Logs/
+unity_project/HandTrackingApp/UserSettings/
+unity_project/HandTrackingApp/obj/
