@@ -306,6 +306,15 @@ python .\pc_sender\app\pc_hand_box_debug_viewer.py --source realsense --rs-fps 3
 ```
 
 ### 3. UDP送信開始（送信PC）
+
+**推奨（平面ロックあり）**: 起動後マーカーが2秒間安定検出されたら平面を固定。以後マーカーを隠しても動き続ける。
+```powershell
+python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3 --aruco-lock-after-ms 2000
+```
+
+ロック出力例：起動後2秒ほどで `[aruco] plane locked after 2000 ms stable detection` と表示されたら完了。
+
+フォールバック（ロックなし・従来の動作）：
 ```powershell
 python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --config .\pc_sender\config\endpoint.json --model .\pc_sender\models\hand_landmarker.task --width 1280 --height 720 --preview --print-fps --aruco-corner-ids 0,1,2,3
 ```

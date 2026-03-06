@@ -241,6 +241,17 @@ def main() -> int:
         default=300,
         help="Reuse last valid ArUco plane for this duration (ms) when markers are temporarily occluded.",
     )
+    parser.add_argument(
+        "--aruco-lock-after-ms",
+        type=int,
+        default=0,
+        help=(
+            "Once ArUco has been continuously detected for this duration (ms), lock the plane and "
+            "stop updating it. 0 = disabled (default). "
+            "Useful for fixed-box setups: set e.g. 2000 so that after 2 s of stable detection "
+            "the plane is frozen and markers can be hidden."
+        ),
+    )
     args = parser.parse_args()
 
     model_path = Path(args.model)
@@ -259,6 +270,11 @@ def main() -> int:
 
     last_h_img_to_box: np.ndarray | None = None
     last_h_t_ms: int | None = None
+
+    # ArUco lock state
+    aruco_locked: bool = False
+    locked_h: np.ndarray | None = None
+    aruco_ok_since_ms: int | None = None
 
     try:
         while True:
@@ -285,17 +301,37 @@ def main() -> int:
             aruco_ok = h_img_to_box is not None
             aruco_stale = False
             aruco_age_ms = 0
-            if not aruco_ok and last_h_img_to_box is not None and last_h_t_ms is not None:
-                age = int(t_ms - last_h_t_ms)
-                if age <= int(args.aruco_hold_ms):
-                    h_img_to_box = last_h_img_to_box
-                    aruco_ok = True
-                    aruco_stale = True
-                    aruco_age_ms = age
 
-            if h_img_to_box is not None and not aruco_stale:
-                last_h_img_to_box = h_img_to_box
-                last_h_t_ms = int(t_ms)
+            # --- ArUco lock (--aruco-lock-after-ms) ---
+            if args.aruco_lock_after_ms > 0:
+                if aruco_locked:
+                    h_img_to_box = locked_h
+                    aruco_ok = True
+                    aruco_stale = False
+                else:
+                    if aruco_ok:
+                        if aruco_ok_since_ms is None:
+                            aruco_ok_since_ms = int(t_ms)
+                        elif int(t_ms) - aruco_ok_since_ms >= args.aruco_lock_after_ms:
+                            aruco_locked = True
+                            locked_h = h_img_to_box
+                            print(f"[aruco] plane locked after {args.aruco_lock_after_ms} ms stable detection")
+                    else:
+                        aruco_ok_since_ms = None
+            # --- end lock ---
+
+            if not aruco_locked:
+                if not aruco_ok and last_h_img_to_box is not None and last_h_t_ms is not None:
+                    age = int(t_ms - last_h_t_ms)
+                    if age <= int(args.aruco_hold_ms):
+                        h_img_to_box = last_h_img_to_box
+                        aruco_ok = True
+                        aruco_stale = True
+                        aruco_age_ms = age
+
+                if h_img_to_box is not None and not aruco_stale:
+                    last_h_img_to_box = h_img_to_box
+                    last_h_t_ms = int(t_ms)
 
             vis = frame_bgr.copy()
             if ids is not None and hasattr(cv2.aruco, "drawDetectedMarkers"):
