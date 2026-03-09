@@ -24,7 +24,6 @@ public class PointingHandRig : MonoBehaviour
     [SerializeField] float rotationLerp = 16f;
     [SerializeField] float minDirectionLength = 0.02f;
 
-    Transform[] _points;
     Transform _wrist;
     Transform _indexTip;
     Quaternion _rotationOffset;
@@ -95,16 +94,8 @@ public class PointingHandRig : MonoBehaviour
 
     void CachePoints()
     {
-        _points = handSide == HandSide.Left ? receiver.leftPoints : receiver.rightPoints;
-        if (_points == null || _points.Length <= 8)
-        {
-            _wrist = null;
-            _indexTip = null;
-            return;
-        }
-
-        _wrist = _points[0];
-        _indexTip = _points[8];
+        _wrist = handSide == HandSide.Left ? receiver.LeftWrist : receiver.RightWrist;
+        _indexTip = handSide == HandSide.Left ? receiver.LeftIndexTip : receiver.RightIndexTip;
     }
 
     void SetAlpha(float alpha)

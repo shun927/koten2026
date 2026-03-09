@@ -1,28 +1,33 @@
 # koten2026
 
-このリポジトリは、PC + **Intel RealSense D435i** で手を推定し、作品側（TouchDesigner/Unity）で使える座標をUDPで配信するための実装を含みます。
+このリポジトリは、PC + **Intel RealSense D435i** で手を推定し、作品側（TouchDesigner/Unity/sound）で使える座標をUDP/OSCで配信するための実装を含みます。
 
 - 旧：人差し指先端の相対3D（`docs/archive/requirements_message_format.md`、旧仕様・参考）
-- 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z、両手21点、`docs/requirements_message_format_box_plane.md`）
+- 推奨：箱の疑似3D（ArUcoでx,yを0..1へ写像 + 単眼疑似z。利用点は手首 + 人差し指先、`docs/requirements_message_format_box_plane.md`）
 
 ## 作品システム（案）
-- 送信PC：RealSense D435i入力＋手推論（箱疑似3D: 両手21点）を生成してtouchへ送信
-- TouchDesigner：受信した座標を統合・正規化・平滑化して、Unityとsoundへ配信
+- 送信PC：RealSense D435i入力＋手推論（箱疑似3Dから手首 + 人差し指先を利用）を生成してtouchへ送信
+- TD / Unity PC：TouchDesignerが受信した座標を統合・正規化・平滑化し、Unityとsoundへ配信
 - Unity：ビジュアル
-- sound：音
+- 音PC：sound
 - Blender：オブジェクト制作（Unityへ取り込み）
 
 通信（推奨）
 - 送信PC → touch：UDP（JSON。`docs/requirements_message_format_box_plane.md` の形式）
-- touch → Unity / sound：OSC（UDP）
+- touch → Unity：OSC（UDP, `127.0.0.1`）
+- touch → sound：OSC（UDP, 音PCの Thunderbolt 側IP）
+
+本番構成（推奨）
+- 画像処理PC → TD / Unity PC：有線LAN
+- TD / Unity PC → 音PC：Thunderbolt ネットワーク（IP over Thunderbolt）
 
 安定化の要点（重要）
 - 座標処理の正本はtouchに寄せる（送信側PCは「箱疑似3Dランドマーク＋`seq`＋`t_ms`」を送る）
 - ロスト時挙動をtouchで統一（例：`aruco.ok=false` が続いたらホールド→フェード→無効）
 - OSCの仕様（アドレス/引数順）を先に固定して、Unityとsoundで同じ前提にする
- - 推奨（21点）: `/box/hand/left/lm3d/0`～`/62` に float×63ch + `/box/hand/left/valid` に int（右も同様） ※TD OSC Out CHOP の制約で63個別chで送出
- - 最小（互換）: `/box/finger/left` と `/box/finger/right` に `x y z valid`
- - 受信ポート（仮）: Unity `9000`（チームで確定後に更新）
+ - 推奨（2点）: `/box/hand/left/right/wrist` と `/box/hand/left/right/index_tip` に `x y z valid`
+ - 互換: `/box/finger/left` と `/box/finger/right` に `x y z valid`
+ - 受信ポート: Unity / sound とも `9000` 固定
 
 ## Box体験の前提（おすすめ）
 - カメラは「箱の正面中心」から正面向き（箱の正面平面にできるだけ垂直）に固定（AruCo平面推定が安定）
@@ -53,7 +58,7 @@
 1. 体験者がboxの側面穴から指（人差し指をさした状態）を差し入れる
 2. box正面のカメラが箱の正面平面（ArUco）と手を撮影
 3. 送信PCが手ランドマークを推定し、箱平面（0..1）へ写像してtouchへUDP送信
-4. touchが左右割り当て/平滑化/ロスト処理を行い、UnityPCとsoundPCへOSC配信
+4. touchが左右割り当て/平滑化/ロスト処理を行い、Unityと音PCへOSC配信
 5. Unityが映像を更新、soundが音を更新
 
 ## TouchDesigner実装手順（集約先）
@@ -66,9 +71,9 @@ touch側の要件、左右判定、フィルタ、ロスト、OSC出力、ノー
 `docs/archive/requirements_raspberrypi.md` は過去案（参考）として残しています。
 
 ## クイックスタート（PC送信 → touch受信）
-0. 2台直結する場合は `docs/requirements_network_pc_direct.md` を参照（固定IP）
+0. 本番のネットワーク前提は `docs/requirements_network_pc_direct.md` を参照
 1. TouchDesigner側の要件は `docs/requirements_touch.md` を参照
-2. 送信PCで `pc_sender/README.md` の手順に従って起動（`venv` / `uv` どちらでもOK。2台運用なら `pc_sender/config/endpoint.json` の `host` をTouchDesigner PCのIPにする）
+2. 送信PCで `pc_sender/README.md` の手順に従って起動（`venv` / `uv` どちらでもOK。`pc_sender/config/endpoint.json` の `host` は TD / Unity PC の LAN 側IP にする）
 3. デバッグ受信する場合は次を実行（任意）:
    - `python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty`
 
@@ -142,8 +147,8 @@ koten2026/
     HandTrackingApp/
       Assets/
         scripts/
-          HandReceiver.cs         # OSC受信・点群適用
-          HandPointsGenerator.cs  # メニューから点群GameObject生成
+          HandReceiver.cs         # OSC受信・2点適用
+          HandPointsGenerator.cs  # メニューから2点GameObject生成
 ```
 
 ## 用意するもの（ハード）
@@ -157,7 +162,7 @@ koten2026/
 ```powershell
 Copy-Item .\pc_sender\config\endpoint.example.json .\pc_sender\config\endpoint.json
 ```
-`config/endpoint.json` の `host`（TouchDesignerのIP）と `port` を環境に合わせて変更します。
+`config/endpoint.json` の `host`（TD / Unity PC の LAN 側IP）と `port` を環境に合わせて変更します。
 
 注意：`hand_landmarker.task` はリポジトリに含めず、各自でダウンロードして配置する運用です（`.gitignore` 済み）。
 

@@ -50,6 +50,7 @@
   <ItemGroup>
     <Compile Include="Assets\scripts\HandReceiver.cs" />
     <Compile Include="Assets\TutorialInfo\Scripts\Readme.cs" />
+    <Compile Include="Assets\scripts\PointingHandRig.cs" />
     <Compile Include="Assets\scripts\HandPointsGenerator.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -20,15 +20,13 @@
 - ArUcoが不安定なときは、touch側で「短時間ホールド→失効」や `lm_img` へのフォールバックを実装する（詳細は `docs/requirements_touch.md`）
 
 ### 2.1 TouchDesigner → Unity（OSC）の推奨入力
-手CGを動かすなら、21点（疑似3D）を受け取れるようにする。
-- `/box/hand/left/lm3d/0` ～ `/box/hand/left/lm3d/62`: float 各1値（計63メッセージ、x0,y0,z0,...,x20,y20,z20）
-- `/box/hand/right/lm3d/0` ～ `/box/hand/right/lm3d/62`: float 各1値（同上）
-- `/box/hand/left/valid`: int（0/1）
-- `/box/hand/right/valid`: int（0/1）
+手CGを動かすなら、2点（疑似3D）を受け取る。
+- `/box/hand/left/wrist`: `x y z valid`
+- `/box/hand/left/index_tip`: `x y z valid`
+- `/box/hand/right/wrist`: `x y z valid`
+- `/box/hand/right/index_tip`: `x y z valid`
 
-> TD の OSC Out CHOP は1ch=1値で送出するため、Unity 側は63個別メッセージをバッファして `Update()` で適用する（`HandReceiver.cs` 参照）。
-
-最小（互換/試作）:
+互換/試作:
 - `/box/finger/left`: `x y z valid`（`z` は疑似深度）
 - `/box/finger/right`: `x y z valid`（`z` は疑似深度）
 
@@ -36,9 +34,9 @@
 
 ### 3.1 OSC受信（TouchDesigner経由）
 
-**受信ポート（仮）**: `9000`（チームで確定後に更新）
-- TouchDesigner PCと同一PCで動かすなら `127.0.0.1` で受けるためファイアウォール設定不要
-- 別PCで動かす場合はWindowsファイアウォールでUDP `9000` を許可する（`docs/requirements_network_pc_direct.md` §4.3 参照）
+**受信ポート**: `9000`（固定）
+- 本番の3台構成では、Unity は TD / Unity PC と同一PCで動かし `127.0.0.1` で受ける
+- Unity を別PCへ分離する構成に変える場合は、WindowsファイアウォールでUDP `9000` を許可する（`docs/requirements_network_pc_direct.md` §4.3 相当の考え方で設定）
 
 **OSCライブラリ候補**:
 - **uOSC**（推奨）：Package Manager から導入可。メインスレッドへの橋渡しが容易
@@ -57,7 +55,7 @@
 TouchDesigner側でX位置ベースの左右判定を行い、`/box/hand/left/` と `/box/hand/right/` の別アドレスで送信する設計のため、**Unity側では左右の振り分けロジックは原則不要**。
 
 万が一TouchDesignerを通さずUnityへ直結する場合のフォールバック：
-- 入力が21点（`lm3d`）のとき、手首（index 0）の `x` が `0.5` 未満を左、以上を右
+- 入力が2点のとき、手首の `x` が `0.5` 未満を左、以上を右
 - `hand`（Left/Right）は補助（遮蔽時に入れ替わる可能性がある）
 
 補足：左右判定の詳細は `docs/requirements_touch.md` §3 を参照。
@@ -67,18 +65,14 @@ TouchDesigner側でX位置ベースの左右判定を行い、`/box/hand/left/` 
 - `t_ms` を使って「何ms受信がないか」で判定できるようにする
 
 ### 3.4 平滑化
-- 入力点（21点）にEMAを掛けるか、関節角にEMAを掛ける
+- 入力点（手首 / 人差し指先）にEMAを掛ける
 - 目安：`alpha=0.2〜0.5` から調整（滑らかさと遅延のトレードオフ）
 - `z` はノイズが目立ちやすいので、`x,y` より強く平滑化する
 
 ### 3.5 ボーン駆動（指）
 最低要件：
-- 指ごとに `MCP/PIP/DIP` のボーンがある（Genericリグ推奨）
-- 21点から関節角を作る場合は、指の3点から角度を計算して回転に落とす
-
-簡略（まず動かす）：
-- 指先（TIP）だけを使って、簡易IK/LookAtで指方向を作る
-- その後、関節角へ置き換える
+- 手首と人差し指先の2点から手モデルの位置と向きを作る
+- 必要なら後から指ボーン駆動へ拡張する
 
 ## 4. カメラ/箱の要件（計測安定化）
 - カメラは箱の正面中心に近く、箱の正面平面に対してできるだけ垂直

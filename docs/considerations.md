@@ -1,6 +1,6 @@
 # 検討事項メモ（本番運用）
 
-このファイルは、現行構成（2台直結・PC送信）で本番前に確認する検討事項をまとめたものです。
+このファイルは、現行構成（画像処理PC + TD / Unity PC + 音PC）で本番前に確認する検討事項をまとめたものです。
 
 ## 0. 作品内容（体験設計）
 - 体験者が「指を入れる行為」と、映像・音の変化が直感的につながるか
@@ -10,9 +10,9 @@
 - 未検出時の演出（急停止ではなく、保持・フェード・余韻のどれにするか）
 
 ## 1. 構成と責務
-- 送信PC（台下）：`pc_sender` + カメラ入力
-- TouchDesigner PC（操作PC）：UDP受信、座標処理、OSC送信
-- Unity/sound：必要に応じて送信PCまたは別PCで受信
+- 画像処理PC（台下）：`pc_sender` + カメラ入力
+- TD / Unity PC（操作PC）：UDP受信、座標処理、OSC送信、Unity表示
+- 音PC：sound の OSC受信、音響出力
 
 ## 1.x. 2台運用 / 3台運用の検討（構成選定）
 本番の安定性を優先し、まずは2台運用で成立するかを確認し、負荷や運用要件で必要なら3台運用へ拡張する。
@@ -38,21 +38,24 @@
 - 自分PCに十分なGPU/CPU余力がある
 - 構成を増やしたくない（本番の事故要因を減らす）
 
-### B) 3台運用（負荷分散構成）
+### B) 3台運用（採用構成）
 - 台下PC（作品専用）：`pc_sender` + RealSense D435i（Python処理のみ）
-- 自分PC（TouchDesigner）：TouchDesigner（統合ハブ）
-- Unity/sound PC（出力）：Unity + sound（OSC受信、演出出力）
+- TD / Unity PC：TouchDesigner（統合ハブ） + Unity（同一PC受信）
+- 音PC（出力）：sound（OSC受信、演出出力）
 
 通信：
 - 台下PC → TouchDesigner PC：UDP/JSON `5005`
-- TouchDesigner PC → Unity/sound PC：OSC/UDP（Unity/sound側の受信ポートを固定して許可）
+- TouchDesigner PC → Unity：OSC/UDP（`127.0.0.1`）
+- TouchDesigner PC → 音PC：OSC/UDP（Thunderbolt ネットワーク）
 
 ネットワーク要件：
-- 3台は「PCをハブ化（ブリッジ/ICS）」より、スイッチ（ハブ）で同一LAN推奨
+- 画像処理PC ↔ TD / Unity PC は有線LAN
+- TD / Unity PC ↔ 音PC は Thunderbolt ネットワーク（IP over Thunderbolt）
 - 固定IP例：
   - 台下PC：`192.168.10.1/24`
   - TouchDesigner PC：`192.168.10.2/24`
-  - Unity/sound PC：`192.168.10.3/24`
+  - TD / Unity PC（Thunderbolt側）：`192.168.20.1/24`
+  - 音PC：`192.168.20.2/24`
 
 メリット：
 - 役割分離で負荷を分散（映像/音の安定性が上がりやすい）
@@ -66,11 +69,11 @@
 - 自分PCが既に重く、2台だとフレームが安定しない
 - Unity側のGPU負荷が高い、または音のI/Oを別PCに寄せたい
 
-### 選定の判断基準（先に決める）
+### 選定の判断基準（記録用）
 - まず2台で成立するなら2台（シンプルさ＝本番安定）
 - 2台でフレーム落ち/音切れ/操作遅延が出るなら3台へ
 - どちらでも、ポート番号とOSCアドレスは固定（`docs/requirements_touch.md` 準拠）
-- 本番前チェックに「UDP受信（`5005`）」「OSC受信（Unity/sound側）」を必ず含める
+- 本番前チェックに「UDP受信（`5005`）」「Unity ローカルOSC」「音PC OSC受信」を必ず含める
 
 ## 2. ネットワーク
 - 2台直結は固定IPで統一（例：`192.168.10.1` / `192.168.10.2`）

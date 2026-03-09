@@ -11,17 +11,23 @@
 
 ## 想定構成（前提）
 
-**標準（2台運用）**
-- 送信PC（台下・作品専用）：RealSense D435i → `pc_sender`（UDP/JSON `5005`）
-- 受信PC（操作PC）：TouchDesigner（UDP受信→処理→OSC送信） + Unity/sound（同一PCならOSCは `127.0.0.1` 推奨）
+**本番前提（3台運用）**
+- 画像処理PC（台下・作品専用）：RealSense D435i → `pc_sender`（UDP/JSON `5005`）
+- TD / Unity PC（操作PC）：TouchDesigner（UDP受信→処理→OSC送信） + Unity（同一PCでOSC受信）
+- 音PC：sound（OSC受信）
 
-**負荷分散（3台運用）**
-- 3台運用の考え方は `docs/considerations.md` を参照（固定IP例もそこに記載）
+固定IP例：
+- LAN側
+  - 画像処理PC：`192.168.10.1/24`
+  - TD / Unity PC：`192.168.10.2/24`
+- Thunderbolt側
+  - TD / Unity PC：`192.168.20.1/24`
+  - 音PC：`192.168.20.2/24`
 
 ---
 
 <a id="現場チェック最短"></a>
-## 現場チェック（最短）: 送信PC → 受信PC（Touch）→ Unity/sound
+## 現場チェック（最短）: 画像処理PC → TD / Unity PC（Touch）→ 音PC
 
 このセクションは「当日、上から順に潰す」ためのチェックリストです。  
 各ステップに **目的 / 合格条件 / 失敗したら** を書いています。
@@ -32,7 +38,8 @@
   1. 受信PC：UDP受信の確認（TouchDesignerを開く前）
   2. 送信PC：D435iの疎通 → 送信開始（`seq`が増える）
   3. 受信PC：TouchDesigner（OSCが出ているか）
-  4. 受信PC：Unity/sound（OSCを受けて動くか）
+  4. 受信PC：Unity（ローカルOSCを受けて動くか）
+  5. 音PC：sound（OSCを受けて動くか）
 - **切り分け方針**
   - 「touchやUnityが悪い」より前に、**まず `pc_receiver/udp_receiver.py` でUDPが来ているか**を必ず確認する（FW/宛先ミスを最短で炙り出す）
 
@@ -41,39 +48,47 @@
 目的：カメラ問題とネットワーク問題を「配線」で潰す。
 
 - D435iは **USB3直挿し**（ハブ回避）
-- LANは **有線直結**（スイッチ経由でもOKだが、まず直結で安定させる）
+- 画像処理PC ↔ TD / Unity PC は **有線LAN**
+- TD / Unity PC ↔ 音PC は **Thunderbolt ケーブル**
 
 合格条件：
 - RealSense ViewerでColorが映る / USBが `3.x` 表示
+- Thunderbolt ネットワークが両PCで認識されている
 
 失敗したら（最優先で疑う）：
 - USB2になっている（ケーブル/ポート/ハブが原因になりやすい）
 - 他アプリがカメラを掴んでいる（Zoom/Teams/ブラウザ等を閉じる）
 
-### 2) ネットワーク（直結・固定IP）
+### 2) ネットワーク（固定IP）
 
 目的：UDPが「届かない」を最初に潰す。
 
 前提（おすすめ例。詳細は `docs/requirements_network_pc_direct.md`）：
-- 送信PC：`192.168.10.1/24`
-- 受信PC：`192.168.10.2/24`
+- LAN側
+  - 画像処理PC：`192.168.10.1/24`
+  - TD / Unity PC：`192.168.10.2/24`
+- Thunderbolt側
+  - TD / Unity PC：`192.168.20.1/24`
+  - 音PC：`192.168.20.2/24`
 
 受信PCで確認（管理者PowerShell推奨）：
 ```powershell
 Get-NetConnectionProfile
 ```
 合格条件：
-- 直結LAN（イーサネット）の `NetworkCategory` が `Private`（推奨）
+- LAN側 / Thunderbolt側の `NetworkCategory` がどちらも `Private`（推奨）
 
 疎通（任意。pingはブロックされることもある）：
 ```powershell
 ping 192.168.10.1
 ping 192.168.10.2
+ping 192.168.20.2
 ```
 
 失敗したら：
-- IP固定が崩れている（`192.168.10.x/24` になっているか）
-- 物理接続（ケーブル/USB-LANアダプタ）が不安定
+- LAN側IP固定が崩れている（`192.168.10.x/24` になっているか）
+- Thunderbolt側IP固定が崩れている（`192.168.20.x/24` になっているか）
+- 物理接続（LANケーブル / Thunderbolt ケーブル / アダプタ）が不安定
 
 ### 3) Windowsファイアウォール（受信側：最重要）
 
@@ -86,8 +101,8 @@ ping 192.168.10.2
 
 目的：送信先の宛先ミスを潰す。
 
-送信PCで確認：`pc_sender/config/endpoint.json` の `host` が **受信PCのIP** になっていること。  
-例（2台直結）：`192.168.10.2`
+送信PCで確認：`pc_sender/config/endpoint.json` の `host` が **TD / Unity PC のLAN側IP** になっていること。  
+例：`192.168.10.2`
 
 合格条件：
 - `udp_receiver.py` にJSONが届く（次のステップ）
@@ -184,12 +199,13 @@ python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty
 - ロスト時の挙動（ホールド→フェード→無効）が想定通り
 - 左右割り当てが入れ替わらない（`docs/requirements_touch.md` のX位置ベースの方針）
 
-### 10) Unity/sound：OSC受信
+### 10) Unity / sound：OSC受信
 
 目的：最終出力が動くことを確認する。
 
-- 同一PC運用なら、TouchDesignerのOSC送信先は `127.0.0.1` 推奨
-- 別PC運用なら、Unity/sound 側で **受信ポートを固定**し、ファイアウォールで受信許可する（`docs/requirements_network_pc_direct.md` 参照）
+- Unity は TD / Unity PC 上で `127.0.0.1` 受信になっていることを確認する
+- sound は音PC側で **受信ポートを固定**し、TouchDesigner の `osc_out_sound` 宛先が `192.168.20.2` になっていることを確認する
+- sound は音PC側で、Thunderbolt 側ネットワークに対してファイアウォール受信許可する（`docs/requirements_network_pc_direct.md` 参照）
 
 ---
 
@@ -199,7 +215,8 @@ python .\pc_receiver\udp_receiver.py --bind 0.0.0.0 --port 5005 --pretty
 2. 送信PC：`pc_hand_box_debug_viewer.py` で `aruco_ok` / 手の点が出るか（計測/依存問題）
 3. 受信PC：`udp_receiver.py` で `seq` が増えるか（ネットワーク/FW/宛先問題）
 4. TouchDesigner内でOSCが出ているか（touch側問題）
-5. Unity/soundがOSCを受けるか（受信ポート/FW/宛先問題）
+5. UnityがローカルOSCを受けるか（TD / Unity PC内の設定問題）
+6. 音PCのsoundがOSCを受けるか（受信ポート/FW/宛先問題）
 
 ---
 
@@ -234,8 +251,9 @@ Test-Path .\pc_sender\models\hand_landmarker.task
 
 ### D) `seq jump` が常発する / FPSが落ちる
 まず疑う：
-- 受信PC側の負荷（Touch + Unity + sound を同時起動しているなら特に）
-- ネットワークがWi-Fiになっている（有線直結に戻す）
+- 受信PC側の負荷（Touch + Unity を同時起動しているため）
+- LAN側またはThunderbolt側の接続が不安定
+- ネットワークがWi-Fiになっている（LAN / Thunderbolt に戻す）
 
 緊急回避（送信側負荷を下げる例）：
 ```powershell
@@ -265,7 +283,7 @@ python .\pc_sender\app\pc_hand_box_sender.py --source realsense --rs-fps 30 --co
 目的：次の起動で「どこから復旧すればいいか」を分かりやすくする。
 
 **推奨の止め順**
-1. Unity/sound を停止（受信ポートを掴んでいる場合がある）
+1. Unity / sound を停止（受信ポートを掴んでいる場合がある）
 2. TouchDesigner を停止（OSC/UDP出力を止める）
 3. 受信PCの `udp_receiver.py` を停止（`Ctrl+C`）
 4. 送信PCの `pc_hand_box_sender.py` / `pc_hand_box_debug_viewer.py` を停止（ウィンドウで `ESC`）

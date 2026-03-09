@@ -35,42 +35,37 @@ public static class HandPointsGenerator
         }
         AssetDatabase.CreateAsset(mat, "Assets/HandPointMaterial.mat");
 
-        receiver.leftPoints  = CreatePoints("LeftHand",  21, mat, receiver.transform.parent ?? receiver.transform.root);
-        receiver.rightPoints = CreatePoints("RightHand", 21, mat, receiver.transform.parent ?? receiver.transform.root);
+        var leftPoints = CreatePoints("LeftHand", mat);
+        var rightPoints = CreatePoints("RightHand", mat);
 
-        // Renderer 配列も自動登録
-        var leftRenderers  = new Renderer[21];
-        var rightRenderers = new Renderer[21];
-        for (int i = 0; i < 21; i++)
-        {
-            leftRenderers[i]  = receiver.leftPoints[i].GetComponent<Renderer>();
-            rightRenderers[i] = receiver.rightPoints[i].GetComponent<Renderer>();
-        }
-        receiver.leftRenderers  = leftRenderers;
-        receiver.rightRenderers = rightRenderers;
+        receiver.leftWrist = leftPoints[0];
+        receiver.leftIndexTip = leftPoints[1];
+        receiver.rightWrist = rightPoints[0];
+        receiver.rightIndexTip = rightPoints[1];
+        receiver.leftRenderers = new[] { leftPoints[0].GetComponent<Renderer>(), leftPoints[1].GetComponent<Renderer>() };
+        receiver.rightRenderers = new[] { rightPoints[0].GetComponent<Renderer>(), rightPoints[1].GetComponent<Renderer>() };
 
         EditorUtility.SetDirty(receiver);
-        Debug.Log("[HandPointsGenerator] LeftHand / RightHand を生成しました。");
+        Debug.Log("[HandPointsGenerator] LeftHand / RightHand の2点を生成しました。");
     }
 
-    static Transform[] CreatePoints(string parentName, int count, Material mat, Transform sceneRoot)
+    static Transform[] CreatePoints(string parentName, Material mat)
     {
-        // 既存の同名オブジェクトを削除してから作り直す
         var existing = GameObject.Find(parentName);
         if (existing != null) Object.DestroyImmediate(existing);
 
         var parent = new GameObject(parentName);
         Undo.RegisterCreatedObjectUndo(parent, "Create " + parentName);
 
-        var points = new Transform[count];
-        for (int i = 0; i < count; i++)
+        string[] names = { "wrist", "index_tip" };
+        var points = new Transform[names.Length];
+        for (int i = 0; i < names.Length; i++)
         {
             var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            sphere.name = $"point_{i:D2}";
+            sphere.name = names[i];
             sphere.transform.SetParent(parent.transform, false);
             sphere.transform.localScale = Vector3.one * 0.1f;
             sphere.GetComponent<Renderer>().sharedMaterial = mat;
-            // コライダーは不要
             Object.DestroyImmediate(sphere.GetComponent<Collider>());
             points[i] = sphere.transform;
         }
