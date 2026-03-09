@@ -48,32 +48,25 @@ public class HandReceiver : MonoBehaviour
     void OnDataReceived(Message message)
     {
         string addr = message.address;
+        Debug.Log($"[HandReceiver] OSC {addr} values={message.values?.Length ?? 0}");
 
-        if (addr == "/box/hand/left/wrist")
+        if (TryApplyPointMessage(addr, message, "/box/hand/left/wrist", ref _leftWristPos, ref _leftValid))
         {
-            _leftWristPos = ReadPoint(message);
-            _leftValid = ReadValid(message);
             _leftDirty = true;
             return;
         }
-        if (addr == "/box/hand/left/index_tip")
+        if (TryApplyPointMessage(addr, message, "/box/hand/left/index_tip", ref _leftIndexTipPos, ref _leftValid))
         {
-            _leftIndexTipPos = ReadPoint(message);
-            _leftValid = ReadValid(message);
             _leftDirty = true;
             return;
         }
-        if (addr == "/box/hand/right/wrist")
+        if (TryApplyPointMessage(addr, message, "/box/hand/right/wrist", ref _rightWristPos, ref _rightValid))
         {
-            _rightWristPos = ReadPoint(message);
-            _rightValid = ReadValid(message);
             _rightDirty = true;
             return;
         }
-        if (addr == "/box/hand/right/index_tip")
+        if (TryApplyPointMessage(addr, message, "/box/hand/right/index_tip", ref _rightIndexTipPos, ref _rightValid))
         {
-            _rightIndexTipPos = ReadPoint(message);
-            _rightValid = ReadValid(message);
             _rightDirty = true;
         }
     }
@@ -89,22 +82,36 @@ public class HandReceiver : MonoBehaviour
     // TD は float で送るが uOSC が double に変換するケースがある
     static float ToFloat(object v) => v is float f ? f : (float)(double)v;
 
-    static Vector3 ReadPoint(Message message)
+    static bool TryApplyPointMessage(string addr, Message message, string prefix, ref Vector3 point, ref bool valid)
     {
-        if (message.values == null || message.values.Length < 3)
-            return Vector3.zero;
-
-        float x = ToFloat(message.values[0]);
-        float y = ToFloat(message.values[1]);
-        float z = ToFloat(message.values[2]);
-        return new Vector3(x, 1f - y, z * 0.1f);
-    }
-
-    static bool ReadValid(Message message)
-    {
-        if (message.values == null || message.values.Length < 4)
+        if (!addr.StartsWith(prefix + "/") || message.values == null || message.values.Length < 1)
+        {
             return false;
-        return ToFloat(message.values[3]) >= 0.5f;
+        }
+
+        float value = ToFloat(message.values[0]);
+        if (addr == prefix + "/x")
+        {
+            point.x = value;
+            return true;
+        }
+        if (addr == prefix + "/y")
+        {
+            point.y = 1f - value;
+            return true;
+        }
+        if (addr == prefix + "/z")
+        {
+            point.z = value * 0.1f;
+            return true;
+        }
+        if (addr == prefix + "/valid")
+        {
+            valid = value >= 0.5f;
+            return true;
+        }
+
+        return false;
     }
 
     void Update()

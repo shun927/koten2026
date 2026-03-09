@@ -1,10 +1,16 @@
-def _append_xyz_valid(script_op, base_name, point, valid):
-    vals = [0.0, 0.0, 0.0, float(valid)]
+def _append_point_channels(script_op, base_name, point, valid):
+    x = 0.0
+    y = 0.0
+    z = 0.0
     if point:
-        vals[0] = point[0]
-        vals[1] = point[1]
-        vals[2] = point[2] if len(point) > 2 else 0.0
-    script_op.appendChan(base_name).vals = vals
+        x = point[0]
+        y = point[1]
+        z = point[2] if len(point) > 2 else 0.0
+
+    script_op.appendChan(f'{base_name}/x').vals = [x]
+    script_op.appendChan(f'{base_name}/y').vals = [y]
+    script_op.appendChan(f'{base_name}/z').vals = [z]
+    script_op.appendChan(f'{base_name}/valid').vals = [float(valid)]
 
 
 def cook(scriptOp):
@@ -40,8 +46,8 @@ def cook(scriptOp):
         wrist = lm_box3[0] if lm_box3 and len(lm_box3) > 0 else None
         index_tip = lm_box3[8] if lm_box3 and len(lm_box3) > 8 else None
 
-        _append_xyz_valid(scriptOp, f'box/hand/{side}/wrist', wrist, valid)
-        _append_xyz_valid(scriptOp, f'box/hand/{side}/index_tip', index_tip, valid)
+        _append_point_channels(scriptOp, f'box/hand/{side}/wrist', wrist, valid)
+        _append_point_channels(scriptOp, f'box/hand/{side}/index_tip', index_tip, valid)
 
         # 旧アドレス互換が必要な場合だけ指先も出す
-        _append_xyz_valid(scriptOp, f'box/finger/{side}', index_tip, valid)
+        _append_point_channels(scriptOp, f'box/finger/{side}', index_tip, valid)
