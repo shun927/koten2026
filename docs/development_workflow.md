@@ -242,6 +242,10 @@ OSC仕様の変更は不要（`lm3d` の63値はそのまま）。Unity側でど
 方向     = lm[8].pos - lm[0].pos → LookAt でこの向きに回転
 ```
 
+このステップで使う Unity スクリプト：
+- `HandReceiver.cs`：OSC受信、21点の更新、`valid` に応じたフェード
+- `PointingHandRig.cs`：`lm3d[0]` と `lm3d[8]` から手モデルの位置と回転を決める
+
 できること：
 - 手を左右・上下に傾けると CG も同じ向きに回転する（**体験の核心が成立する**）
 - 手全体を移動すると CG も追従する
@@ -267,7 +271,66 @@ OSC仕様の変更は不要（`lm3d` の63値はそのまま）。Unity側でど
 エクスポート前に必ずやること：
 - `Ctrl+A` → **Apply All Transforms**（Scale/Rotation を適用してから FBX/glTF 出力）
 
-#### Unityでの実装例
+#### Unityでの設定手順
+
+前提：
+- §3.3 の点群表示がすでに動いていること
+- `uOSC` 導入済みで、`OscManager` に `uOscServer` と `HandReceiver` が付いていること
+- TouchDesigner から `/box/hand/left/right/lm3d/*` と `valid` が届いていること
+
+手順 1：点群を作る
+- Unity メニュー `koten2026 > Create Hand Points` を実行する
+- `LeftHand` / `RightHand` が生成され、`HandReceiver` の `leftPoints` / `rightPoints` / `leftRenderers` / `rightRenderers` に自動登録される
+- Play 中に `point_00` が手首、`point_08` が人差し指先として動くことを確認する
+
+手順 2：手モデルをシーンに置く
+- Blender から出力した指さし手モデルをシーンに配置する
+- モデルのピボットが手首にあることを確認する
+- モデルのマテリアルは Transparent にしておく
+
+手順 3：Hierarchy を揃える
+- 点群ルート（`LeftHand` / `RightHand`）と手モデルは、**同じ基準空間**に置く
+- 迷ったら、両方ともシーン直下に置く
+- 点群ルートの親とモデルの親は、`Position=(0,0,0)`、`Rotation=(0,0,0)`、`Scale=(1,1,1)` にしておく
+
+例：
+
+```text
+Scene
+├─ OscManager
+│  ├─ uOscServer (Port=9000)
+│  └─ HandReceiver
+├─ LeftHand              <- 点群（自動生成）
+├─ RightHand             <- 点群（自動生成）
+├─ LeftPointingHand      <- 左手モデル
+└─ RightPointingHand     <- 右手モデル
+```
+
+手順 4：`PointingHandRig` を追加する
+- 左手モデルの GameObject に `PointingHandRig` を追加する
+- 右手も使うなら右手モデルにも同様に追加する
+
+Inspector 設定：
+- `Receiver`：`OscManager` の `HandReceiver`
+- `Hand Side`：左手モデルなら `Left`、右手モデルなら `Right`
+- `Hand Model Root`：通常はそのモデル自身の Transform
+- `Hand Renderers`：そのモデルで表示に使っている `MeshRenderer` / `SkinnedMeshRenderer` を全部登録
+- `Local Euler Offset`：最初は `(0, 0, 0)` で開始
+- `Position Lerp`：`16`
+- `Rotation Lerp`：`16`
+- `Min Direction Length`：`0.02`
+
+手順 5：向きが合わない場合は `Local Euler Offset` で補正する
+- 横を向く：`(0, 90, 0)` または `(0, -90, 0)`
+- 後ろを向く：`(0, 180, 0)`
+- 手の甲と手のひらが逆：`(180, 0, 0)`
+
+補足：
+- `PointingHandRig` は `point_00` と `point_08` の `localPosition` を使っている
+- そのため「モデルだけ別の親の下にある」「親に回転や拡大縮小が入っている」と位置や向きがずれる
+- ずれるときはまず親 Transform を疑う
+
+#### Unityでの実装イメージ
 
 ```csharp
 Vector3 wristPos   = points[0].localPosition;   // lm3d index 0
@@ -278,7 +341,10 @@ handModel.rotation = Quaternion.LookRotation(dir, Vector3.up);
 ```
 
 合格の目安：
+- `point_00`（手首）と `point_08`（人差し指先）が安定して動く
+- 手モデルの位置が `point_00` に追従する
 - 手を上下左右に傾けると hand CG が追従して回転する
+- 向きがずれる場合も `Local Euler Offset` の調整だけで直せる
 - 手を隠すと valid=0 でフェードアウトする
 
 ### 4.2 ステップ2（任意）：21点 → 指のボーン駆動

@@ -30,6 +30,11 @@ public class HandReceiver : MonoBehaviour
     const string LeftLmPrefix  = "/box/hand/left/lm3d/";
     const string RightLmPrefix = "/box/hand/right/lm3d/";
 
+    public bool LeftValid => _leftValid;
+    public bool RightValid => _rightValid;
+    public float LeftAlpha => _leftAlpha;
+    public float RightAlpha => _rightAlpha;
+
     void Start()
     {
         var server = GetComponent<uOscServer>();
